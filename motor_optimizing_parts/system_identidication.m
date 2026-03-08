@@ -1,8 +1,10 @@
 %% =====================================
 % DC Motor Open-Loop Step Test -> Excel -> Identify G(s) (ROBUST)
+% BTS7960 version
+% NO soft-start, NO slew rate: motor gets PWM instantly at step time.
 % Board: Arduino Nano | COM5
 % Encoder: D2 (A), D3 (B)
-% Driver : ENA D9 (PWM), IN1 D8, IN2 D7
+% Driver : BTS7960 -> R_PWM D9, L_PWM D10, R_EN D8, L_EN D7
 % Output: RPM vs time, then estimate optimized:
 %   G(s) = K/(tau*s+1) * e^{-L s}
 % STOP: close figure or press STOP
@@ -14,9 +16,15 @@ clear; clc; close all;
 COM   = "COM5";
 BOARD = "Nano3";
 
-ENA   = "D9";
-IN1   = "D8";
-IN2   = "D7";
+% ===== BTS7960 Pins =====
+R_PWM = "D9";
+L_PWM = "D10";
+R_EN  = "D8";
+L_EN  = "D7";
+
+% Optional current sense
+R_IS  = "A0";
+L_IS  = "A1";
 
 ENC_A = "D2";
 ENC_B = "D3";
@@ -32,17 +40,13 @@ PWM_MIN = 0;
 PWM_MAX = 255;
 
 % ===== Step Test Settings =====
-CAPTURE_SEC = 20;          % total test duration
-STEP_TIME   = 0.40;        % time to apply the step (sec) after start
-PWM_STEP    = 255;         % step PWM magnitude (0->PWM_STEP)
+CAPTURE_SEC = 20;      % total test duration
+STEP_TIME   = 1.00;    % time to apply the step (sec) after start
+PWM_STEP    = 170;     % step PWM magnitude (0->PWM_STEP)
 forwardDir  = true;
 
-% Filters (for RPM)
+% RPM low-pass filter
 rpmAlpha = 0.25;
-
-% Optional soft-start (before step)
-SOFTSTART_PWM = 50;        % small pwm before step (reduces jerk)
-SOFTSTART_SEC = STEP_TIME; % keep until step time
 
 %% ---- Derived CPR ----
 if RPM_AT_OUTPUT
@@ -54,20 +58,30 @@ end
 %% ---- Connect Arduino ----
 a = arduino(COM, BOARD, "Libraries", "rotaryEncoder");
 
-configurePin(a, ENA, "PWM");
-configurePin(a, IN1, "DigitalOutput");
-configurePin(a, IN2, "DigitalOutput");
+% BTS7960 configuration
+configurePin(a, R_PWM, "PWM");
+configurePin(a, L_PWM, "PWM");
+configurePin(a, R_EN , "DigitalOutput");
+configurePin(a, L_EN , "DigitalOutput");
+
+% Optional analog current sense
+configurePin(a, R_IS, "AnalogInput");
+configurePin(a, L_IS, "AnalogInput");
 
 enc = rotaryEncoder(a, ENC_A, ENC_B, round(CPR_TOTAL));
 
+% Enable BTS7960
+writeDigitalPin(a, R_EN, 1);
+writeDigitalPin(a, L_EN, 1);
+
 % Motor OFF initially
-applyMotorPWM(a, ENA, IN1, IN2, 0, forwardDir, PWM_MIN, PWM_MAX);
+applyMotorPWM_BTS7960(a, R_PWM, L_PWM, R_EN, L_EN, 0, forwardDir, PWM_MIN, PWM_MAX);
 
 % Reset encoder baseline
 lastCount = readCount(enc);
 
 %% ---- Figure (Fullscreen + STOP) ----
-fig = figure('Name','Open-Loop Step Test (RPM)','NumberTitle','off');
+fig = figure('Name','Open-Loop Step Test (RPM) - BTS7960','NumberTitle','off');
 fig.WindowState = 'maximized';
 
 setappdata(fig,'stopFlag',false);
@@ -83,13 +97,18 @@ uicontrol('Style','pushbutton',...
 
 fig.CloseRequestFcn = @(src,event)setappdata(fig,'stopFlag',true);
 
-ax = axes(fig); grid(ax,'on'); hold(ax,'on');
-hRPM = plot(ax, nan, nan, 'LineWidth', 1.5);
-xlabel(ax,'Time (s)'); ylabel(ax,'RPM');
-title(ax, sprintf('Open-Loop Step Test | PWM step=%d at t=%.2fs', PWM_STEP, STEP_TIME));
+ax1 = subplot(2,1,1,'Parent',fig); grid(ax1,'on'); hold(ax1,'on');
+hRPM = plot(ax1, nan, nan, 'LineWidth', 1.5);
+xlabel(ax1,'Time (s)'); ylabel(ax1,'RPM');
+title(ax1, sprintf('Open-Loop Step Test | PWM step=%d at t=%.2fs', PWM_STEP, STEP_TIME));
+
+ax2 = subplot(2,1,2,'Parent',fig); grid(ax2,'on'); hold(ax2,'on');
+hU = stairs(ax2, nan, nan, 'LineWidth', 1.5);
+xlabel(ax2,'Time (s)'); ylabel(ax2,'PWM');
+title(ax2,'Input PWM');
 
 %% ---- Pre-allocate logs ----
-Ncap = ceil(CAPTURE_SEC / TsTarget) + 50;
+Ncap = ceil(CAPTURE_SEC / TsTarget) + 200;
 tLog   = nan(Ncap,1);
 rpmLog = nan(Ncap,1);
 uLog   = nan(Ncap,1);
@@ -133,28 +152,31 @@ while isvalid(fig) && ~getappdata(fig,'stopFlag')
     lastCount = count;
 
     rpmRaw = (double(delta) * 60.0) / (double(CPR_TOTAL) * dt);
-    rpmRawMag = abs(rpmRaw);
 
-    rpmFilt = rpmAlpha*rpmRawMag + (1-rpmAlpha)*rpmFilt;
+    % No abs(). Clamp negatives due to noise/reverse ticks.
+    rpmRaw = max(0, rpmRaw);
+
+    % Filter
+    rpmFilt = rpmAlpha*rpmRaw + (1-rpmAlpha)*rpmFilt;
     if firstSample
-        rpmFilt = rpmRawMag;
+        rpmFilt = rpmRaw;
         firstSample = false;
     end
 
-    % Input PWM: soft-start then step
-    if t < SOFTSTART_SEC
-        uPWM = SOFTSTART_PWM;
+    % Instant step: 0 -> PWM_STEP
+    if t < STEP_TIME
+        uPWM = 0;
     else
         uPWM = PWM_STEP;
     end
-    applyMotorPWM(a, ENA, IN1, IN2, uPWM, forwardDir, PWM_MIN, PWM_MAX);
+    applyMotorPWM_BTS7960(a, R_PWM, L_PWM, R_EN, L_EN, uPWM, forwardDir, PWM_MIN, PWM_MAX);
 
     % Log
     k = k + 1;
     if k > numel(tLog)
-        tLog   = [tLog;   nan(200,1)];
-        rpmLog = [rpmLog; nan(200,1)];
-        uLog   = [uLog;   nan(200,1)];
+        tLog   = [tLog;   nan(400,1)];
+        rpmLog = [rpmLog; nan(400,1)];
+        uLog   = [uLog;   nan(400,1)];
     end
     tLog(k)   = t;
     rpmLog(k) = rpmFilt;
@@ -163,21 +185,33 @@ while isvalid(fig) && ~getappdata(fig,'stopFlag')
     % Plot (rate limited)
     if (t - lastPlotUpdate) >= 0.1
         lastPlotUpdate = t;
-        set(hRPM,'XData',tLog(1:k),'YData',rpmLog(1:k));
-        xlim(ax,[max(0,t-10) t+0.2]);
-        ylim(ax,[0 max(50, max(rpmLog(max(1,k-200):k),[],'omitnan')*1.2)]);
+
+        if isgraphics(hRPM)
+            set(hRPM,'XData',tLog(1:k),'YData',rpmLog(1:k));
+        end
+        if isgraphics(hU)
+            set(hU,'XData',tLog(1:k),'YData',uLog(1:k));
+        end
+
+        xlim(ax1,[max(0,t-10) t+0.2]);
+        xlim(ax2,[max(0,t-10) t+0.2]);
+
+        ymax = max(rpmLog(max(1,k-300):k),[],'omitnan');
+        ylim(ax1,[0 max(50, ymax*1.2)]);
+        ylim(ax2,[-5 260]);
+
         drawnow limitrate;
     end
 end
 
 %% ---- SAFE STOP ----
-applyMotorPWM(a, ENA, IN1, IN2, 0, forwardDir, PWM_MIN, PWM_MAX);
+applyMotorPWM_BTS7960(a, R_PWM, L_PWM, R_EN, L_EN, 0, forwardDir, PWM_MIN, PWM_MAX);
 
 if isvalid(fig)
     delete(fig);
 end
 
-% Trim
+% Trim logs
 tLog   = tLog(1:k);
 rpmLog = rpmLog(1:k);
 uLog   = uLog(1:k);
@@ -190,61 +224,66 @@ writetable(T, fileName);
 disp("Stopped.");
 disp("Saved Excel: " + fileName);
 
-% Show table at end
-openvar("T");
-disp("First 10 rows:");
-disp(T(1:min(10,height(T)), :));
-
 %% =========================================================
-% ROBUST First-Order + Dead-Time Identification (Optimized)
+% First-Order + Dead-Time Identification (Optimized)
 % Model: G(s) = K/(tau*s + 1) * e^{-L s}
 %% =========================================================
 
-% Shift time so step occurs at t = 0
-t_id = tLog - STEP_TIME;
+% Find actual step time from uLog (robust)
+idxStep = find(uLog >= PWM_STEP, 1, 'first');
+if isempty(idxStep)
+    warning("PWM step was never applied. Check STEP_TIME / PWM_STEP / logging.");
+    return;
+end
+tStepActual = tLog(idxStep);
+
+% Use data after actual step
+t_id = tLog - tStepActual;
 mask = t_id >= 0;
 t_id = t_id(mask);
 y_id = rpmLog(mask);
 
-if numel(t_id) < 20
-    warning("Not enough data after step to identify G(s). Increase CAPTURE_SEC.");
+MIN_AFTER_STEP_SEC = 5;
+if isempty(t_id) || t_id(end) < MIN_AFTER_STEP_SEC
+    warning("Not enough time after step (need >= %.1fs). Increase CAPTURE_SEC or reduce STEP_TIME.", MIN_AFTER_STEP_SEC);
+    fprintf("Captured after step: %.3f s | STEP at t=%.3f s | CAPTURE=%.3f s\n", ...
+        (isempty(t_id)*0 + (~isempty(t_id))*t_id(end)), tStepActual, CAPTURE_SEC);
     return;
 end
 
-% Build uniform time vector
+% Uniform time base
 Ts = TsTarget;
 t_end = t_id(end);
 t_u = (0:Ts:t_end)';
 
-% Resample measured RPM onto uniform grid
-y_u = interp1(t_id, y_id, t_u, 'linear', 'extrap');
+% Resample
+y_u = interp1(t_id, y_id, t_u, 'linear');
+y_u = fillmissing(y_u,'nearest');
 
-% Remove DC offset (baseline)
+% Baseline removal
 y_u = y_u - y_u(1);
 
-% ===== Initial guesses =====
-yss = mean(y_u(end-max(10,round(0.2*numel(y_u)))+1:end), "omitnan");
+% Input step
+u_u = PWM_STEP * ones(size(t_u));
+
+% Initial guesses
+tailN = max(10, round(0.2*numel(y_u)));
+yss = mean(y_u(end-tailN+1:end), "omitnan");
 K0  = max(1e-6, yss / double(PWM_STEP));
 tau0 = max(0.1, t_end/3);
 L0  = 0.02;
 
-% Optimize in log-domain (keeps parameters positive)
 p0 = [log(K0); log(tau0); log(max(L0,1e-4))];
-
-% Input is a step PWM_STEP after t=0
-u_u = PWM_STEP * ones(size(t_u));
-
 cost = @(p) firstOrderCost(p, t_u, u_u, y_u);
 
 opts = optimset('Display','iter','MaxIter',250,'TolX',1e-7,'TolFun',1e-7);
 pHat = fminsearch(cost, p0, opts);
 
-% Decode parameters
 K   = exp(pHat(1));
 tau = exp(pHat(2));
 L   = exp(pHat(3));
 
-% Build transfer function
+% Transfer function
 s = tf('s');
 G = K / (tau*s + 1);
 G.InputDelay = L;
@@ -256,24 +295,25 @@ disp("Estimated parameters (optimized):");
 fprintf("K   = %.6f (RPM/PWM)\n", K);
 fprintf("tau = %.6f s\n", tau);
 fprintf("L   = %.6f s (dead time)\n", L);
+fprintf("Step detected at t = %.6f s (from PWM log)\n", tStepActual);
 disp("=====================================");
 
-% Simulate model
+% Model simulation
 y_model = lsim(G, u_u, t_u);
 
-% Compare
+% Compare plot
 figure('Name','First-Order Identification (Optimized)','NumberTitle','off');
 grid on; hold on;
 plot(t_u, y_u, 'LineWidth', 1.5);
 plot(t_u, y_model, '--', 'LineWidth', 1.5);
 xlabel("Time after step (s)");
-ylabel("RPM");
+ylabel("RPM (baseline removed)");
 title("Measured vs Optimized First-Order Model (Open-loop)");
-legend("Measured RPM (resampled)","Model RPM","Location","best");
+legend("Measured RPM","Model RPM","Location","best");
 
-%% ---- Helper ----
+%% ===================== Helpers =====================
+
 function J = firstOrderCost(p, t, u, y)
-    % Decode positive parameters
     K   = exp(p(1));
     tau = exp(p(2));
     L   = exp(p(3));
@@ -286,7 +326,7 @@ function J = firstOrderCost(p, t, u, y)
         yhat = lsim(G, u, t);
         e = y - yhat;
 
-        % Weight early part more (better dynamics fit)
+        % Weight early dynamics more
         w = 1 + 3*exp(-t/0.5);
         J = sum((w .* e).^2, 'omitnan');
 
@@ -298,24 +338,26 @@ function J = firstOrderCost(p, t, u, y)
     end
 end
 
-function applyMotorPWM(a, ENA, IN1, IN2, pwm, forward, PWM_MIN, PWM_MAX)
+function applyMotorPWM_BTS7960(a, R_PWM, L_PWM, R_EN, L_EN, pwm, forward, PWM_MIN, PWM_MAX)
 
     pwm = max(PWM_MIN, min(PWM_MAX, pwm));
+    duty = pwm / 255;
+
+    % Keep bridge enabled
+    writeDigitalPin(a, R_EN, 1);
+    writeDigitalPin(a, L_EN, 1);
 
     if pwm == 0
-        writeDigitalPin(a, IN1, 0);
-        writeDigitalPin(a, IN2, 0);
-        writePWMDutyCycle(a, ENA, 0);
+        writePWMDutyCycle(a, R_PWM, 0);
+        writePWMDutyCycle(a, L_PWM, 0);
         return;
     end
 
     if forward
-        writeDigitalPin(a, IN1, 1);
-        writeDigitalPin(a, IN2, 0);
+        writePWMDutyCycle(a, R_PWM, duty);
+        writePWMDutyCycle(a, L_PWM, 0);
     else
-        writeDigitalPin(a, IN1, 0);
-        writeDigitalPin(a, IN2, 1);
+        writePWMDutyCycle(a, R_PWM, 0);
+        writePWMDutyCycle(a, L_PWM, duty);
     end
-
-    writePWMDutyCycle(a, ENA, pwm/255);
 end

@@ -1,7 +1,7 @@
 %% =====================================
 % DC Motor Speed PID Control (RPM)
+% BTS7960 version
 % STOP button + Safe exit + Fullscreen
-% Updated with BH-Optimized PID + Derivative Filter (N)
 %% =====================================
 
 clear; clc; close all;
@@ -10,10 +10,17 @@ clear; clc; close all;
 COM   = "COM5";
 BOARD = "Nano3";
 
-ENA   = "D9";
-IN1   = "D8";
-IN2   = "D7";
+% ===== BTS7960 Pins =====
+R_PWM = "D9";
+L_PWM = "D10";
+R_EN  = "D8";
+L_EN  = "D7";
 
+% Optional current sense
+R_IS  = "A0";
+L_IS  = "A1";
+
+% Encoder
 ENC_A = "D2";
 ENC_B = "D3";
 
@@ -28,27 +35,27 @@ PWM_MIN = 0;
 PWM_MAX = 255;
 
 % ===== Setpoint =====
-SETPOINT_RPM = 30.0;
+SETPOINT_RPM = 100.0;
 
-% ===== BH Optimized PID (from your result) =====
-Kp = 8.791555;
-Ki = 9.867337;
-Kd = 0.799079;
+% ===== BH Optimized PID =====
+Kp = 5.261321;
+Ki = 1.781492;
+Kd = 0.220258;
 
-% Derivative filter coefficient (matches pid(Kp,Ki,Kd,N))
+% Derivative filter coefficient
 N  = 100.0;
 
 forwardDir = true;
 
-% RPM smoothing (measurement filter)
+% RPM smoothing
 rpmAlpha = 0.25;
 
-% Integral clamp (anti-windup)
+% Integral clamp
 I_LIMIT  = 200.0;
 
 % Soft-start
-SOFTSTART_SEC = 0.4;
-SOFTSTART_PWM = 50;
+SOFTSTART_SEC = 0;
+SOFTSTART_PWM = 0;
 
 %% ---- Derived CPR ----
 if RPM_AT_OUTPUT
@@ -60,19 +67,32 @@ end
 %% ---- Connect Arduino ----
 a = arduino(COM, BOARD, "Libraries", "rotaryEncoder");
 
-configurePin(a, ENA, "PWM");
-configurePin(a, IN1, "DigitalOutput");
-configurePin(a, IN2, "DigitalOutput");
+% BTS7960 pin configuration
+configurePin(a, R_PWM, "PWM");
+configurePin(a, L_PWM, "PWM");
+configurePin(a, R_EN , "DigitalOutput");
+configurePin(a, L_EN , "DigitalOutput");
 
+% Optional current sense pins
+configurePin(a, R_IS, "AnalogInput");
+configurePin(a, L_IS, "AnalogInput");
+
+% Encoder
 enc = rotaryEncoder(a, ENC_A, ENC_B, round(CPR_TOTAL));
 
-applyMotorPWM(a, ENA, IN1, IN2, 0, forwardDir, PWM_MIN, PWM_MAX);
+% Enable BTS7960
+writeDigitalPin(a, R_EN, 1);
+writeDigitalPin(a, L_EN, 1);
+
+% Motor stop at startup
+applyMotorPWM_BTS7960(a, R_PWM, L_PWM, R_EN, L_EN, 0, forwardDir, PWM_MIN, PWM_MAX);
+
 lastCount = readCount(enc);
 
 %% ---- PID states ----
 integral  = 0.0;
 prevError = 0.0;
-dFilt     = 0.0;   % filtered derivative term state
+dFilt     = 0.0;
 rpmFilt   = 0.0;
 
 %% ---- Data buffers ----
@@ -86,7 +106,7 @@ spL     = nan(N0,1);
 k = 0;
 
 %% ---- Figure Full Screen ----
-fig = figure('Name','DC Motor RPM Control','NumberTitle','off');
+fig = figure('Name','DC Motor RPM Control - BTS7960','NumberTitle','off');
 fig.WindowState = 'maximized';
 
 %% ---- STOP FLAG ----
@@ -178,16 +198,12 @@ while isvalid(fig) && ~getappdata(fig,'stopFlag')
     else
         error = SETPOINT_RPM - rpmFilt;
 
-        % Integrator (with clamp)
+        % Integrator with clamp
         integral = integral + error*dt;
         integral = max(-I_LIMIT, min(I_LIMIT, integral));
 
-        % === Derivative with N filter (matches pid(...,N)) ===
-        % raw derivative
+        % Derivative with filter
         dRaw = (error - prevError) / dt;
-
-        % discrete first-order low-pass on derivative:
-        % dFilt = (N*dt)/(1+N*dt)*dRaw + (1/(1+N*dt))*dFilt
         aD = (N*dt) / (1 + N*dt);
         dFilt = aD*dRaw + (1 - aD)*dFilt;
 
@@ -195,11 +211,11 @@ while isvalid(fig) && ~getappdata(fig,'stopFlag')
         u = Kp*error + Ki*integral + Kd*dFilt;
         pwmCmd = round(u);
 
-        % Saturation + anti-windup (simple back-off)
+        % Saturation + anti-windup
         if pwmCmd > PWM_MAX
             pwmCmd = PWM_MAX;
             if error > 0
-                integral = integral - error*dt; % unwind
+                integral = integral - error*dt;
             end
         elseif pwmCmd < PWM_MIN
             pwmCmd = PWM_MIN;
@@ -211,84 +227,99 @@ while isvalid(fig) && ~getappdata(fig,'stopFlag')
         prevError = error;
     end
 
-    % Apply PWM
-    applyMotorPWM(a, ENA, IN1, IN2, pwmCmd, forwardDir, PWM_MIN, PWM_MAX);
+    % Apply PWM to BTS7960
+    applyMotorPWM_BTS7960(a, R_PWM, L_PWM, R_EN, L_EN, pwmCmd, forwardDir, PWM_MIN, PWM_MAX);
 
     % Logging
     err = SETPOINT_RPM - rpmFilt;
 
     k = k + 1;
     if k > numel(tLog)
-        tLog = [tLog; nan(N0,1)];
+        tLog    = [tLog; nan(N0,1)];
         rpmRawL = [rpmRawL; nan(N0,1)];
         rpmFilL = [rpmFilL; nan(N0,1)];
-        pwmL = [pwmL; nan(N0,1)];
-        errL = [errL; nan(N0,1)];
-        spL = [spL; nan(N0,1)];
+        pwmL    = [pwmL; nan(N0,1)];
+        errL    = [errL; nan(N0,1)];
+        spL     = [spL; nan(N0,1)];
     end
 
-    tLog(k)=t;
-    rpmRawL(k)=rpmRawMag;
-    rpmFilL(k)=rpmFilt;
-    pwmL(k)=pwmCmd;
-    errL(k)=err;
-    spL(k)=SETPOINT_RPM;
+    tLog(k)    = t;
+    rpmRawL(k) = rpmRawMag;
+    rpmFilL(k) = rpmFilt;
+    pwmL(k)    = pwmCmd;
+    errL(k)    = err;
+    spL(k)     = SETPOINT_RPM;
 
     % Plot update
     if (t-lastPlotUpdate)>=0.1
         lastPlotUpdate=t;
         idx=1:k;
 
-        set(hRPM,'XData',tLog(idx),'YData',rpmFilL(idx));
-        set(hSP ,'XData',tLog(idx),'YData',spL(idx));
-        set(hPWM,'XData',tLog(idx),'YData',pwmL(idx));
-        set(hERR,'XData',tLog(idx),'YData',errL(idx));
-        set(hRAW,'XData',tLog(idx),'YData',rpmRawL(idx));
+        % Check objects still valid before updating
+        if isvalid(fig) && isgraphics(hRPM) && isgraphics(hSP) && isgraphics(hPWM) ...
+                && isgraphics(hERR) && isgraphics(hRAW) && isgraphics(hDBG)
 
-        x1 = max(0,t-10); x2 = t+0.2;
-        xlim(ax1,[x1 x2]); xlim(ax2,[x1 x2]); xlim(ax3,[x1 x2]); xlim(ax4,[x1 x2]);
+            set(hRPM,'XData',tLog(idx),'YData',rpmFilL(idx));
+            set(hSP ,'XData',tLog(idx),'YData',spL(idx));
+            set(hPWM,'XData',tLog(idx),'YData',pwmL(idx));
+            set(hERR,'XData',tLog(idx),'YData',errL(idx));
+            set(hRAW,'XData',tLog(idx),'YData',rpmRawL(idx));
 
-        yMax = max([SETPOINT_RPM*1.5, max(rpmFilL(max(1,k-200):k),[],'omitnan')*1.2, 50]);
-        ylim(ax1,[0 yMax]);
-        ylim(ax4,[0 yMax]);
+            x1 = max(0,t-10); 
+            x2 = t+0.2;
+            xlim(ax1,[x1 x2]); 
+            xlim(ax2,[x1 x2]); 
+            xlim(ax3,[x1 x2]); 
+            xlim(ax4,[x1 x2]);
 
-        dbg = sprintf(['Time: %.2f s\nSetpoint: %.2f RPM\nRPM: %.2f\nError: %.2f\nPWM: %d\n' ...
-                       'Kp=%.3f Ki=%.3f Kd=%.3f  N=%.1f'],...
-                       t, SETPOINT_RPM, rpmFilt, err, pwmCmd, Kp, Ki, Kd, N);
-        set(hDBG,'String',dbg);
+            yMax = max([SETPOINT_RPM*1.5, max(rpmFilL(max(1,k-200):k),[],'omitnan')*1.2, 50]);
+            ylim(ax1,[0 yMax]);
+            ylim(ax4,[0 yMax]);
 
-        drawnow limitrate;
+            dbg = sprintf(['Time: %.2f s\nSetpoint: %.2f RPM\nRPM: %.2f\nError: %.2f\nPWM: %d\n' ...
+                           'Kp=%.3f Ki=%.3f Kd=%.3f N=%.1f'],...
+                           t, SETPOINT_RPM, rpmFilt, err, pwmCmd, Kp, Ki, Kd, N);
+            set(hDBG,'String',dbg);
+
+            drawnow limitrate;
+        else
+            break;
+        end
     end
 end
 
 %% ---- SAFE STOP ----
-applyMotorPWM(a, ENA, IN1, IN2, 0, forwardDir, PWM_MIN, PWM_MAX);
+applyMotorPWM_BTS7960(a, R_PWM, L_PWM, R_EN, L_EN, 0, forwardDir, PWM_MIN, PWM_MAX);
 
-if isvalid(fig)
+if exist('fig','var') && isvalid(fig)
     delete(fig);
 end
 
 disp("Stopped.");
 
-%% ---- Motor Function ----
-function applyMotorPWM(a, ENA, IN1, IN2, pwm, forward, PWM_MIN, PWM_MAX)
+%% ---- Motor Function for BTS7960 ----
+function applyMotorPWM_BTS7960(a, R_PWM, L_PWM, R_EN, L_EN, pwm, forward, PWM_MIN, PWM_MAX)
 
-    pwm = max(PWM_MIN,min(PWM_MAX,pwm));
+    pwm = max(PWM_MIN, min(PWM_MAX, pwm));
+    duty = pwm / 255;
 
-    if pwm==0
-        writeDigitalPin(a,IN1,0);
-        writeDigitalPin(a,IN2,0);
-        writePWMDutyCycle(a,ENA,0);
+    % Keep bridge enabled
+    writeDigitalPin(a, R_EN, 1);
+    writeDigitalPin(a, L_EN, 1);
+
+    if pwm == 0
+        writePWMDutyCycle(a, R_PWM, 0);
+        writePWMDutyCycle(a, L_PWM, 0);
         return;
     end
 
     if forward
-        writeDigitalPin(a,IN1,1);
-        writeDigitalPin(a,IN2,0);
+        % Forward: RPWM active, LPWM zero
+        writePWMDutyCycle(a, R_PWM, duty);
+        writePWMDutyCycle(a, L_PWM, 0);
     else
-        writeDigitalPin(a,IN1,0);
-        writeDigitalPin(a,IN2,1);
+        % Reverse: LPWM active, RPWM zero
+        writePWMDutyCycle(a, R_PWM, 0);
+        writePWMDutyCycle(a, L_PWM, duty);
     end
-
-    writePWMDutyCycle(a,ENA,pwm/255);
 end
