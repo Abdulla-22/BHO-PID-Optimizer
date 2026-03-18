@@ -3,7 +3,7 @@ clear;
 
 % SETTINGS
 numStars = 10;
-iterations = 1000;
+iterations = 100;
 
 % Bounds
 xmin = 1.5; xmax = 3.5;

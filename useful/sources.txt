@@ -30,3 +30,5 @@ https://www.researchgate.net/publication/369534982_DC_Motor_Rotary_Speed_Control
 https://community.element14.com/products/arduino/b/blog/posts/simple-arduino-dc-motor-control-with-encoder-part-2
 
 https://community.element14.com/products/arduino/b/blog/posts/simple-arduino-dc-motor-control-with-encoder-part-2
+
+https://www2.ensc.sfu.ca/people/faculty/saif/ctm/index.html
