@@ -32,3 +32,6 @@ https://community.element14.com/products/arduino/b/blog/posts/simple-arduino-dc-
 https://community.element14.com/products/arduino/b/blog/posts/simple-arduino-dc-motor-control-with-encoder-part-2
 
 https://www2.ensc.sfu.ca/people/faculty/saif/ctm/index.html
+
+prototype sample:
+https://www.youtube.com/watch?v=o7VVmtX7SKs
