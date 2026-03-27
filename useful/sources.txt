@@ -35,3 +35,8 @@ https://www2.ensc.sfu.ca/people/faculty/saif/ctm/index.html
 
 prototype sample:
 https://www.youtube.com/watch?v=o7VVmtX7SKs
+
+https://www.researchgate.net/publication/342198580_Designing_a_Robust_Controller_Using_SMC_and_Fuzzy_Artificial_Organic_Networks_for_Brushed_DC_Motors
+
+https://forums.ni.com/t5/NI-Circuit-Design-Community-Blog/Closed-loop-Control-of-Motor-Applications-in-Multisim/ba-p/3479879
+
