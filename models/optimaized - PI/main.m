@@ -11,7 +11,7 @@ close all;
 system_id = 3;
 
 nPop = 20;        % Number of stars
-MaxIt = 2|0;      % Maximum iterations
+MaxIt = 20;      % Maximum iterations
 sim_time = 20;
 
 VarMin = [0 0]; % kp, ki, kd
