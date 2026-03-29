@@ -1,0 +1,58 @@
+Phase 1: Research and Literature Review
+
+1.1 Define the project problem and objectives
+1.2 Study dynamic system control principles
+1.3 Study classical controllers (PID, LQR)
+1.4 Study optimization algorithms used in control systems
+1.5 Study the Black Hole Optimization Algorithm
+1.6 Review related research papers and previous work
+1.7 Define the proposed methodology for optimal controller tuning
+
+Phase 2: System Modeling and Simulation
+
+(هنا نجعلها General modeling وليس فقط DC motor)
+
+2.1 Select the dynamic system to be studied (e.g., DC Motor Speed)
+2.2 Develop the mathematical model of the system
+2.3 Derive the transfer function of the system
+2.4 Convert system equations to the s-domain
+2.5 Implement the system model in MATLAB
+2.6 Perform initial simulations
+2.7 Validate the mathematical model
+
+Phase 3: Hardware Selection and Implementation
+
+(هذه تبقى DC Motor لأنها التجربة العملية)
+
+3.1 Identify required hardware components
+3.2 Select DC motor with encoder
+3.3 Select motor driver and microcontroller (Arduino)
+3.4 Order the required hardware components
+3.5 Receive and inspect hardware components
+3.6 Assemble the hardware system
+3.7 Connect motor, encoder, and motor driver
+3.8 Develop Arduino code for motor control
+
+Phase 4: Software Development and System Integration
+
+4.1 Implement the Black Hole optimization algorithm in MATLAB
+4.2 Develop PID tuning algorithm using BH optimization
+4.3 Test individual software modules
+4.4 Integrate all MATLAB modules into one application
+4.5 Establish communication between MATLAB and Arduino
+4.6 Integrate hardware and software components
+4.7 Implement real-time motor control system
+
+Phase 5: Testing, Evaluation, and Documentation
+
+5.1 Perform open-loop motor experiments
+5.2 Collect experimental motor data
+5.3 Validate the system model using experimental data
+5.4 Apply optimized PID parameters to the system
+5.5 Evaluate system performance
+5.6 Compare optimized controller with classical tuning methods
+5.7 Analyze results and generate plots
+5.8 Write the final thesis report
+5.9 Prepare the research paper
+5.10 Prepare final presentation and poster
+5.11 Final project submission and closure
