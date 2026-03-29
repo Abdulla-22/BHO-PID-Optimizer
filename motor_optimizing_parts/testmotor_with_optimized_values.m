@@ -35,7 +35,7 @@ PWM_MIN = 0;
 PWM_MAX = 255;
 
 % ===== Setpoint =====
-SETPOINT_RPM = 100.0;
+SETPOINT_RPM = 50.0;
 
 % ===== BH Optimized PID =====
 Kp = 5.261321;

@@ -5,9 +5,9 @@ clc; clear; close all;
 % G(s) = 0.3572 * exp(-0.0886 s) / (0.8918 s + 1)
 %% =========================
 s = tf('s');
-Kplant   = 0.2872;
-tauPlant = 0.6542;
-Ldelay   = 0.251;
+Kplant   = 0.3667;
+tauPlant = 1.86;
+Ldelay   = 0.465;
 
 G = Kplant/(tauPlant*s + 1);
 G.InputDelay = Ldelay;
@@ -20,13 +20,13 @@ Gp = (Kplant/(tauPlant*s + 1)) * tf(numD, denD);
 %% =========================
 % BH settings
 %% =========================
-numStars   = 100;
-iterations = 200;
+numStars   = 10;
+iterations = 100;
 
 % PID bounds (tighten to avoid constant instability)
-Kp_min = 0;   Kp_max = 15;
-Ki_min = 0;   Ki_max = 10;
-Kd_min = 0;   Kd_max = 0.3;
+Kp_min = 0;   Kp_max = 20;
+Ki_min = 0;   Ki_max = 20;
+Kd_min = 0;   Kd_max = 0.5;
 
 % Derivative filter (IMPORTANT)
 N = 100;  % 20..200 typical. Higher = less filtering.
