@@ -11,7 +11,6 @@ This project applies the Black Hole Optimization Algorithm (BHA) to tune control
 
 Instead of manual tuning or classical methods, this approach:
 - Uses performance-based cost functions
-- Applies constraints (overshoot, rise time, stability)
 - Works with multiple systems using a unified framework
 
 ---
