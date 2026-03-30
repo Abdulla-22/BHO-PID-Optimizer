@@ -236,6 +236,6 @@ It demonstrates:
 
 ## Notes
 
-- Always run initialization files before simulation
+- Update the parameters of the system in initialization files before simulation
 - Use realistic parameter bounds to avoid instability
 - Cost function design strongly affects optimization results
