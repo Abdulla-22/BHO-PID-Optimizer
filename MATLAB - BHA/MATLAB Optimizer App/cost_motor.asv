@@ -1,0 +1,76 @@
+function J = cost_motor(K, model, req)
+
+% K = [Kp Ki Kd]
+kp = K(1);
+ki = K(2);
+kd = K(3);
+
+%% Assign controller gains to base workspace
+assignin('base','kp',kp);
+assignin('base','ki',ki);
+assignin('base','kd',kd);
+
+%% Run simulation
+
+drawnow;   % Allow MATLAB to process Stop button before simulation
+pause(0.01);   % Small pause before simulation
+try
+    simOut = sim(model);
+catch
+    % Simulation failed
+    J = 1e6;
+    return
+end
+
+%% Get response
+resp = simOut.OutputResponse;
+t = resp.Time;
+y = resp.Data;
+
+%% Check for invalid response
+if isempty(t) || isempty(y) || any(isnan(y)) || any(isinf(y)) || max(abs(y)) > 1e5
+    J = 1e6;
+    return
+end
+
+%% Get reference value
+if evalin('base', 'exist(''ref'', ''var'')')
+    ref = evalin('base','ref');
+else
+    ref = 1;   % Default step reference
+end
+
+%% Step response information
+info = stepinfo(y, t, ref);
+
+%% Tracking error
+e = ref - y;
+ISE = trapz(t, e.^2);
+
+%% Rise time penalty
+if isnan(info.RiseTime)
+    risePenalty = 100;
+else
+    risePenalty = max(0, info.RiseTime - req.wantedRiseTime)^2;
+end
+
+%% Overshoot penalty
+if isnan(info.Overshoot)
+    osPenalty = 100;
+else
+    osPenalty = max(0, info.Overshoot - req.wantedOvershoot)^2;
+end
+
+%% Steady-state error penalty
+ess = abs(ref - y(end));
+
+%% Weights
+w1 = 1;     % Tracking error
+w2 = 50;    % Rise time penalty
+w3 = 50;    % Overshoot penalty
+w4 = 100;   % Steady-state error penalty
+
+%% Total cost
+J = w1*ISE + w2*risePenalty + w3*osPenalty + w4*ess;
+
+end
