@@ -1,234 +1,242 @@
-# PID Tuning App (MATLAB App Designer) — Black Hole Algorithm (BHA)
+# PID Tuning & System Optimization App (MATLAB App Designer) — Black Hole Algorithm (BHA)
 
-A MATLAB **App Designer** application that tunes a **PID controller** (`Kp`, `Ki`, `Kd`) for a **DC motor** using the **Black Hole Algorithm (BHA)**.
-
-The app supports:
-- PID gain tuning with BHA
-- Response plots (setpoint vs output), error, and control signal
-- Detailed performance metrics (overshoot, rise time, settling time, IAE/ITAE/ISE, effort, smoothness)
-- Optional serial connection to Arduino/Raspberry Pi for reading motor status and streaming telemetry
-- Optional BHA animation (stars + black hole + event horizon) during optimization
+A MATLAB App Designer application for tuning control systems using the Black Hole Optimization Algorithm (BHA).  
+The app supports multiple dynamic systems and uses simulation-based optimization to automatically tune controller parameters.
 
 ---
 
-## Features
+## Overview
 
-### Core
-- **Black Hole Algorithm (BHA)** optimizer for `[Kp, Ki, Kd]`
+This project applies the Black Hole Optimization Algorithm (BHA) to tune controller parameters (PI / PD / PID) for different dynamic systems.
+
+Instead of manual tuning or classical methods, this approach:
+- Uses performance-based cost functions
+- Applies constraints (overshoot, rise time, stability)
+- Works with multiple systems using a unified framework
+
+---
+
+## Supported Systems
+
+The application currently supports:
+
+- DC Motor Speed Control  
+- Ball and Beam System  
+- Cruise Control System  
+
+Each system includes:
+- Simulink model  
+- Initialization file (`init_*`)  
+- Cost function (`cost_*`)  
+
+---
+
+## Core Features
+
+### Optimization Engine
+- Black Hole Algorithm (BHA)
+- Supports:
+  - PI, PD, PID controllers
 - Configurable:
-  - PID bounds
-  - BHA population size and iterations
-  - Fitness weights and penalties
-  - Sample time and test duration
-- **Offline simulation mode** using a motor model `Gc` (transfer function or state-space)
+  - Number of stars (population size)
+  - Number of iterations
+- Tracks best solution per iteration
 
-### Visualization
-- Motor response graphs:
-  - Setpoint vs Output
-  - Error vs Time
-  - Control Signal vs Time
-- Performance metrics table
-- Optional BHA animation:
-  - Stars (candidate solutions)
-  - Black hole (best solution)
-  - Event horizon (swallowing boundary)
-  - “Swallowed” stars re-spawned
+---
 
-### Hardware (Optional)
-- Serial streaming of:
-  - `time, setpoint, speed/position, control (PWM)`
-- Send updated PID gains from MATLAB to Arduino
+### Cost Function
+
+The optimizer evaluates controller performance using real metrics:
+
+- Overshoot (OS)
+- Steady-state error (ESS)
+- Peak time / rise time
+- Stability checks
+
+Example:
+
+```matlab
+J = 0.8*OS + 0.1*ess + 0.1*PeakTime;
+```
+
+Unstable or invalid simulations are penalized:
+
+```matlab
+J = 1e6;
+```
+
+---
+
+### Visualization & Results
+
+- Step response plots
+- Performance metrics using `stepinfo`
+- Results table:
+  - Kp, Ki, Kd
+  - Overshoot
+  - Settling time
+  - Peak time
+- Iteration tracking (Best Cost per iteration)
+
+---
+
+### App Interface (MATLAB App Designer)
+
+The GUI allows the user to:
+
+- Select system (Motor / Ball & Beam / Cruise)
+- Select controller type (PI / PD / PID)
+- Set parameter bounds
+- Configure optimization settings
+- Run optimization directly
+- View results in plots and tables
 
 ---
 
 ## Project Structure
 
-Recommended structure:
-
 ```text
-PID_BHA_App/
-  app/
-    PID_BHA_App.mlapp            # App Designer file (main GUI)
-  matlab/
-    bha_pid_tune.m               # Black Hole Algorithm implementation
-    fitness_pid.m                # Fitness function (calls simulation + metrics)
-    simulate_pid_discrete.m      # Discrete closed-loop simulation (PID + plant)
-    compute_metrics.m            # Overshoot, rise time, settling time, IAE/ITAE/ISE, etc.
-    motor_model_example.m        # Example motor model creator (optional)
-  arduino/
-    motor_pid_stream.ino         # Arduino template (optional)
+project/
+
+├── app/
+│   └── OptimizerApp.mlapp
+
+├── systems/
+│   ├── motor/
+│   │   ├── CLMSBD.slx
+│   │   ├── init_motor.m
+│   │   └── cost_motor.m
+│
+│   ├── ball_and_beam/
+│   │   ├── CLBandBBD.slx
+│   │   ├── init_ballandbeam.m
+│   │   └── cost_ballandbeam.m
+│
+│   ├── cruise_control/
+│   │   ├── CLCCBD.slx
+│   │   ├── init_cruise.m
+│   │   └── cost_cruise.m
+
+├── optimization/
+│   └── blackHole.m
+
+├── main.m
+└── README.md
 ```
+
+---
+
+## How It Works
+
+### 1. Initialization
+Each system defines:
+- Physical parameters
+- Transfer function
+- Reference signal
+
+---
+
+### 2. Black Hole Optimization
+
+- Generate random candidate solutions (stars)
+- Evaluate cost using simulation
+- Select best solution → Black Hole
+- Move stars toward Black Hole
+- Replace swallowed stars randomly
+
+---
+
+### 3. Simulation-Based Evaluation
+
+Each candidate solution:
+- Applies controller gains to Simulink model
+- Runs simulation
+- Extracts output response
+- Computes performance metrics
+
+---
+
+### 4. Constraint Handling
+
+The system enforces constraints such as:
+- Maximum overshoot
+- Desired rise time
+- Stability requirements
+
+Violations result in large penalties in the cost function.
 
 ---
 
 ## Requirements
 
 ### Required
-- MATLAB (App Designer included)
+- MATLAB
+- Simulink
 
-### Recommended (offline motor model simulation)
-- **Control System Toolbox** (for `tf`, `ss`, `c2d`, etc.)
-
-### Optional (hardware integration)
-- For Arduino:
-  - **MATLAB Support Package for Arduino Hardware** (only if you want MATLAB `arduino()` API; not required for `serialport`)
-- For Raspberry Pi:
-  - **MATLAB Support Package for Raspberry Pi Hardware**
-- Note: Basic serial communication in MATLAB can be done with `serialport` (no extra toolbox required).
+### Recommended
+- Control System Toolbox
 
 ---
 
-## Setup
+## How to Run
 
-### 1) Clone the repo
-```bash
-git clone <your-repo-url>
-cd PID_BHA_App
-```
-
-### 2) Add project folders to MATLAB path
-In MATLAB:
-- Home → Set Path → Add Folder…
-  - Add: `PID_BHA_App/matlab`
-
-Or via command:
+### Using main.m
 ```matlab
-addpath(genpath(fullfile(pwd,'matlab')));
-savepath;
+run('main.m')
 ```
 
-### 3) Open the app
-Open:
-```text
-app/PID_BHA_App.mlapp
-```
-Then click **Run**.
+### Using the App
+- Open the `.mlapp` file
+- Click Run
+- Configure parameters
+- Start optimization
 
 ---
 
-## Offline Simulation Mode (Recommended First)
+## Key Improvements
 
-### 1) Define your motor model `Gc` in base workspace
-The app expects a variable named `Gc` in MATLAB base workspace.
-
-Example:
-```matlab
-s = tf('s');
-Gc = 1/(0.2*s + 1);     % placeholder example
-```
-
-Or run:
-```matlab
-run("matlab/motor_model_example.m");
-```
-
-### 2) Configure app parameters
-In the app:
-- Set sample time `Ts` (e.g., `0.01`)
-- Set test duration `Ttest` (e.g., `2` to `5` seconds)
-- Set setpoint (e.g., `1000`)
-- Set PID bounds (`Kp/Ki/Kd min/max`)
-- Set BHA settings (`Stars`, `Iterations`)
-- Set fitness weights and penalties
-
-### 3) Run optimization
-Click **Run BHA Tuning**  
-Then use **Simulate Best** to re-plot best result and metrics.
+- Added multi-system support
+- Integrated Simulink-based evaluation
+- Implemented realistic cost functions with constraints
+- Built full MATLAB App Designer interface
+- Added results table and performance metrics
+- Improved BHA stability and tracking
 
 ---
 
-## Fitness Function Overview
+## Known Issues
 
-The optimizer minimizes a scalar fitness score based on:
-- Tracking error (ITAE/IAE/ISE)
-- Overshoot penalty
-- Control effort penalty
-- Smoothness penalty (reduces PWM jitter)
-- Large penalties for unstable/poor behavior (settling too slow, excessive saturation, etc.)
-
-You can edit `matlab/fitness_pid.m` and adjust:
-- weights `w1..w4`
-- penalties (`penaltyUnstable`, `penaltySaturation`)
-- settling band, saturation threshold, etc.
+- Simulink path conflicts (shadowed models)
+- Missing base workspace variables (e.g., `ref`, `step_amp`)
+- Requires initialization before simulation
 
 ---
 
-## Hardware Streaming Mode (Optional)
+## Future Work
 
-### Serial format (suggested)
-Arduino sends one line per sample:
-```text
-time,setpoint,measurement,control
-```
-
-Example:
-```text
-0.12,1000,932,180
-```
-
-### Arduino control architecture (recommended)
-- Arduino runs the real-time PID loop (fixed `Ts`)
-- Arduino streams telemetry to MATLAB app
-- MATLAB app visualizes and optionally sends updated gains:
-  - `KPID=Kp,Ki,Kd`
-
-> See `/arduino/motor_pid_stream.ino` for a template (adapt to your encoder + driver).
+- Real-time hardware integration (Arduino)
+- Advanced BHA visualization
+- Automatic system identification
+- Multi-objective optimization
+- Improved constraint handling in GUI
 
 ---
 
-## BHA Animation (Optional)
+## Project Context
 
-If enabled in the app, an extra axes shows:
-- star positions (candidates)
-- current black hole (best)
-- event horizon circle (2D projection)
-- swallowed stars
+This project is developed as part of:
 
-Visualization typically maps:
-- `x = Kp`
-- `y = Ki`
-- marker size (or color) = `Kd`
+EN8914 — Final Year Project
+
+It demonstrates:
+- Application of optimization algorithms in control systems
+- Integration between MATLAB, Simulink, and GUI design
+- Practical engineering problem solving
 
 ---
 
-## Usage Notes / Tips
-- Start with **conservative PID bounds**, then expand gradually.
-- Use **penalties** to prevent unstable controllers during tuning.
-- For DC motor speed:
-  - Use derivative filtering (`alpha`) to reduce noise sensitivity.
-  - Use saturation limits (`uMax`) consistent with PWM range.
+## Notes
 
----
-
-## Troubleshooting
-
-### “Property assignment is not allowed when the object is empty”
-This usually happens if `createComponents` was overwritten manually.
-
-If using App Designer:
-- Do not manually edit `createComponents`.
-- In Design View, add a dummy component → Save → remove it → Save again.
-
-### No motor model found
-Define `Gc` in MATLAB base workspace:
-```matlab
-Gc = tf(...);
-```
-
----
-
-## Roadmap (Suggested Improvements)
-- Add `scatter3` 3D BHA visualization (Kp, Ki, Kd)
-- Add live “Best J vs Iteration” plot
-- Add automatic motor model identification (step test + fitting)
-- Add safe online tuning mode with stop conditions (current/overspeed limits, current limits)
-
----
-
-## License
-Add your license here (e.g., MIT).
-
----
-
-## Acknowledgments
-- Black Hole Algorithm (BHA) metaheuristic concept used for PID gain optimization.
+- Always run initialization files before simulation
+- Use realistic parameter bounds to avoid instability
+- Cost function design strongly affects optimization results
