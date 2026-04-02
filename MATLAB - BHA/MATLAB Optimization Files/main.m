@@ -18,8 +18,8 @@ close all;
 % 1 = BEST
 % 2 = CONSTRAINED
 %% =========================
-system_id = 2;
-controller_type = 'PD';
+system_id = 3;
+controller_type = 'PI';
 optimization_mode = 1;
 
 %% =========================
