@@ -1,4 +1,4 @@
-function [best, history] = BlackHoleAlgorithm(costFcn, nPop, MaxIt, VarMin, VarMax, controller_type, model, stopFcn)
+function [best, history] = BlackHoleAlgorithm(costFcn, nPop, MaxIt, VarMin, VarMax, controller_type, model, stopFcn, progressFcn)
 
 nVar = numel(VarMin);
 
@@ -6,27 +6,18 @@ if nargin < 8 || isempty(stopFcn)
     stopFcn = @() false;
 end
 
-%% Reset stop flag at start
-setappdata(0, 'BHO_Stop', false);
+if nargin < 9
+    progressFcn = [];
+end
 
-%% Initialize output history
-history = struct();
-history.Iteration = [];
-history.Kp        = [];
-history.Ki        = [];
-history.Kd        = [];
-history.Cost      = [];
-history.Overshoot = [];
-history.RiseTime  = [];
-
-%% Initialize stars
+% Initialize stars
 star = struct('pos', [], 'cost', []);
 
 for i = 1:nPop
-
-    if shouldStopOptimization(stopFcn)
+    if stopFcn()
         best = [];
-        fprintf('\nOptimization stopped during initialization.\n');
+        history = struct('Iteration', [], 'Kp', [], 'Ki', [], 'Kd', [], ...
+                         'Cost', [], 'Overshoot', [], 'RiseTime', [], 'ESS', []);
         return;
     end
 
@@ -34,36 +25,34 @@ for i = 1:nPop
     star(i).cost = costFcn(star(i).pos);
 end
 
-%% Main loop
+% History initialization
+history = struct( ...
+    'Iteration', [], ...
+    'Kp', [], ...
+    'Ki', [], ...
+    'Kd', [], ...
+    'Cost', [], ...
+    'Overshoot', [], ...
+    'RiseTime', [], ...
+    'ESS', []);
+
 for it = 1:MaxIt
 
-    if shouldStopOptimization(stopFcn)
-        best = getCurrentBest(star);
-        fprintf('\nOptimization stopped at iteration %d.\n', it);
+    if stopFcn()
+        best = [];
         return;
     end
 
-    %% Save old data
-    oldPos  = zeros(nPop, nVar);
-    oldCost = zeros(nPop, 1);
-
-    for i = 1:nPop
-        oldPos(i, :) = star(i).pos;
-        oldCost(i)   = star(i).cost;
-    end
-
-    %% Step 1: Select black hole
+    % Step 1: Select black hole
     [~, idxBH] = min([star.cost]);
     BH = star(idxBH);
 
-    %% Step 2: Move stars toward black hole
+    % Step 2: Move stars toward black hole
     movedStar = star;
 
     for i = 1:nPop
-
-        if shouldStopOptimization(stopFcn)
-            best = getCurrentBest(star);
-            fprintf('\nOptimization stopped at iteration %d during movement.\n', it);
+        if stopFcn()
+            best = [];
             return;
         end
 
@@ -77,11 +66,11 @@ for it = 1:MaxIt
         end
     end
 
-    %% Step 3: Update black hole
+    % Step 3: Update black hole
     [~, idxBH_new] = min([movedStar.cost]);
     BH = movedStar(idxBH_new);
 
-    %% Step 4: Event horizon
+    % Step 4: Event horizon
     allNewCosts = [movedStar.cost];
     sumCosts = sum(allNewCosts);
 
@@ -91,216 +80,62 @@ for it = 1:MaxIt
         R = BH.cost / sumCosts;
     end
 
-    %% Step 5: Reinitialize swallowed stars
-    distVal = zeros(nPop, 1);
-    status  = strings(nPop, 1);
-
+    % Step 5: Reinitialize swallowed stars
     for i = 1:nPop
-
-        if shouldStopOptimization(stopFcn)
-            best = getCurrentBest(star);
-            fprintf('\nOptimization stopped at iteration %d during event horizon check.\n', it);
+        if stopFcn()
+            best = [];
             return;
         end
 
-        if i == idxBH_new
-            distVal(i) = 0;
-            status(i)  = "Black Hole";
-        else
-            distVal(i) = norm(BH.pos - movedStar(i).pos);
+        if i ~= idxBH_new
+            distVal = norm(BH.pos - movedStar(i).pos);
 
-            if distVal(i) < R
+            if distVal < R
                 movedStar(i).pos  = VarMin + rand(1, nVar) .* (VarMax - VarMin);
                 movedStar(i).cost = costFcn(movedStar(i).pos);
-                status(i) = "Reinitialized";
-            else
-                status(i) = "Moved toward BH";
             end
         end
     end
 
-    %% Step 6: Update population
+    % Step 6: Update population
     star = movedStar;
 
-    %% Current best
+    % Step 7: Current best
     [~, idxBest] = min([star.cost]);
     bestStar = star(idxBest);
 
-    %% Expand gains
-    Kfull = expandControllerGainsLocal(bestStar.pos, controller_type);
-
-    %% Calculate actual overshoot and rise time for history
-    [actualOS, actualRT] = evaluateBestStarPerformance(Kfull, model);
-
-    %% Save history for plotting and table
-    history.Iteration(end+1,1) = it;
-    history.Kp(end+1,1)        = Kfull(1);
-    history.Ki(end+1,1)        = Kfull(2);
-    history.Kd(end+1,1)        = Kfull(3);
-    history.Cost(end+1,1)      = bestStar.cost;
-    history.Overshoot(end+1,1) = actualOS;
-    history.RiseTime(end+1,1)  = actualRT;
-
-    %% Prepare display arrays
-    newPos  = zeros(nPop, nVar);
-    newCost = zeros(nPop, 1);
-
-    for i = 1:nPop
-        newPos(i, :) = star(i).pos;
-        newCost(i)   = star(i).cost;
-    end
-
-    %% Sort for display only
-    [~, sortIdx] = sort(oldCost, 'descend');
-
-    oldPos  = oldPos(sortIdx, :);
-    oldCost = oldCost(sortIdx);
-    newPos  = newPos(sortIdx, :);
-    newCost = newCost(sortIdx);
-    distVal = distVal(sortIdx);
-    status  = status(sortIdx);
-
-    %% Variable names
+    % Expand gains to full PID form
     switch upper(controller_type)
         case 'PI'
-            varNamesOld = {'Old_Kp', 'Old_Ki'};
-            varNamesNew = {'New_Kp', 'New_Ki'};
-
+            Kfull = [bestStar.pos(1) bestStar.pos(2) 0];
         case 'PD'
-            varNamesOld = {'Old_Kp', 'Old_Kd'};
-            varNamesNew = {'New_Kp', 'New_Kd'};
-
+            Kfull = [bestStar.pos(1) 0 bestStar.pos(2)];
         case 'PID'
-            varNamesOld = {'Old_Kp', 'Old_Ki', 'Old_Kd'};
-            varNamesNew = {'New_Kp', 'New_Ki', 'New_Kd'};
-
+            Kfull = [bestStar.pos(1) bestStar.pos(2) bestStar.pos(3)];
         otherwise
             error('Invalid controller_type. Use PI, PD, or PID.');
     end
 
-    %% Print table
-    fprintf('\n================ Iteration %d ================\n', it);
-    fprintf('Best Cost = %.6f\n', bestStar.cost);
+    % Simulate best solution of current iteration to extract OS / RT / ESS
+    assignin('base', 'kp', Kfull(1));
+    assignin('base', 'ki', Kfull(2));
+    assignin('base', 'kd', Kfull(3));
 
-    if nVar == 3
-        T = table( ...
-            (1:nPop)', ...
-            oldPos(:,1), oldPos(:,2), oldPos(:,3), ...
-            oldCost, ...
-            newPos(:,1), newPos(:,2), newPos(:,3), ...
-            newCost, ...
-            repmat(R, nPop, 1), ...
-            distVal, ...
-            status, ...
-            'VariableNames', { ...
-            'Star', ...
-            varNamesOld{1}, varNamesOld{2}, varNamesOld{3}, ...
-            'OldCost', ...
-            varNamesNew{1}, varNamesNew{2}, varNamesNew{3}, ...
-            'NewCost', ...
-            'R', 'Distance', 'Status'});
-        disp(T)
-
-    elseif nVar == 2
-        T = table( ...
-            (1:nPop)', ...
-            oldPos(:,1), oldPos(:,2), ...
-            oldCost, ...
-            newPos(:,1), newPos(:,2), ...
-            newCost, ...
-            repmat(R, nPop, 1), ...
-            distVal, ...
-            status, ...
-            'VariableNames', { ...
-            'Star', ...
-            varNamesOld{1}, varNamesOld{2}, ...
-            'OldCost', ...
-            varNamesNew{1}, varNamesNew{2}, ...
-            'NewCost', ...
-            'R', 'Distance', 'Status'});
-        disp(T)
-    end
-
-    fprintf('Iteration %d Best Cost = %.6f\n', it, bestStar.cost);
-end
-
-%% Final best
-best = getCurrentBest(star);
-
-end
-
-%% =========================
-% Local function: stop checker
-%% =========================
-function stopFlag = shouldStopOptimization(stopFcn)
-    drawnow limitrate;
-
-    stopFlag = false;
-
-    if isappdata(0, 'BHO_Stop')
-        stopFlag = getappdata(0, 'BHO_Stop');
-    end
-
-    if ~stopFlag && ~isempty(stopFcn)
-        stopFlag = stopFcn();
-    end
-end
-
-%% =========================
-% Local function: current best
-%% =========================
-function best = getCurrentBest(star)
-    if isempty(star)
-        best = [];
-        return;
-    end
-
-    [~, idxBest] = min([star.cost]);
-    best = star(idxBest).pos;
-end
-
-%% =========================
-% Local function: expand gains to [Kp Ki Kd]
-%% =========================
-function Kfull = expandControllerGainsLocal(Kopt, controller_type)
-
-    switch upper(controller_type)
-        case 'PI'
-            Kfull = [Kopt(1) Kopt(2) 0];
-
-        case 'PD'
-            Kfull = [Kopt(1) 0 Kopt(2)];
-
-        case 'PID'
-            Kfull = [Kopt(1) Kopt(2) Kopt(3)];
-
-        otherwise
-            error('Invalid controller_type.');
-    end
-end
-
-%% =========================
-% Local function: evaluate best star performance
-%% =========================
-function [actualOS, actualRT] = evaluateBestStarPerformance(Kfull, model)
-
-    actualOS = NaN;
-    actualRT = NaN;
+    overshootVal = NaN;
+    riseTimeVal  = NaN;
+    essVal       = NaN;
 
     try
-        assignin('base', 'kp', Kfull(1));
-        assignin('base', 'ki', Kfull(2));
-        assignin('base', 'kd', Kfull(3));
-
         sim_time = evalin('base', 'sim_time');
         simOut = sim(model, 'StopTime', num2str(sim_time), 'CaptureErrors', 'on');
 
         if isprop(simOut, 'ErrorMessage') && ~isempty(simOut.ErrorMessage)
-            return;
+            error(simOut.ErrorMessage);
         end
 
-        t = simOut.OutputResponse.Time;
-        y = simOut.OutputResponse.Data;
+        resp = simOut.OutputResponse;
+        t = resp.Time;
+        y = resp.Data;
 
         if evalin('base', 'exist(''step_amp'', ''var'')')
             ref = evalin('base', 'step_amp');
@@ -310,12 +145,42 @@ function [actualOS, actualRT] = evaluateBestStarPerformance(Kfull, model)
             ref = 1;
         end
 
-        info = stepinfo(y, t, ref);
-        actualOS = info.Overshoot;
-        actualRT = info.RiseTime;
+        try
+            info = stepinfo(y, t, ref, 'SettlingTimeThreshold', 0.02);
+        catch
+            info = stepinfo(y, t);
+        end
+
+        overshootVal = info.Overshoot;
+        riseTimeVal  = info.RiseTime;
+
+        if abs(ref) < eps
+            essVal = 0;
+        else
+            essVal = (abs(ref - y(end)) / abs(ref)) * 100;
+        end
 
     catch
-        actualOS = NaN;
-        actualRT = NaN;
+        overshootVal = NaN;
+        riseTimeVal  = NaN;
+        essVal       = NaN;
     end
+
+    % Save current best iteration result
+    history.Iteration(end + 1, 1) = it;
+    history.Kp(end + 1, 1)        = Kfull(1);
+    history.Ki(end + 1, 1)        = Kfull(2);
+    history.Kd(end + 1, 1)        = Kfull(3);
+    history.Cost(end + 1, 1)      = bestStar.cost;
+    history.Overshoot(end + 1, 1) = overshootVal;
+    history.RiseTime(end + 1, 1)  = riseTimeVal;
+    history.ESS(end + 1, 1)       = essVal;
+
+    % Live UI update callback
+    if ~isempty(progressFcn)
+        progressFcn(history);
+    end
+end
+
+best = bestStar.pos;
 end
