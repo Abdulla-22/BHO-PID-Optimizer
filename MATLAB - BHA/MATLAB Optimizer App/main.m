@@ -18,24 +18,24 @@ close all;
 % 1 = BEST
 % 2 = CONSTRAINED
 %% =========================
-system_id = 2;
-controller_type = 'PD';
-optimization_mode = 1;
+system_id = 3;
+controller_type = 'PI';
+optimization_mode = 2;
 
 %% =========================
 % User performance specifications
 % Used only in CONSTRAINED mode
 %% =========================
-wantedovershoot = 0.1;
-wantedrisetime  = 0.1;
-wantedess       = 0.01;
+wantedovershoot = 1.0;     % In percentage
+wantedrisetime  = 0.01;    % In seconds
+wantedess       = 1.0;     % In percentage
 
 %% =========================
 % Optimization settings
 %% =========================
 nPop     = 20;
 MaxIt    = 20;
-sim_time = 10;
+sim_time = 5;
 
 %% =========================
 % Controller-system compatibility check
@@ -281,7 +281,8 @@ for i = 1:length(methods)
     results.(method).y        = y;
     results.(method).Gains    = bestK;
     results.(method).stepinfo = info;
-    results.(method).ess      = abs(ref - y(end));
+    actual_ESS = abs(ref - y(end));
+    results.(method).ess = (actual_ESS / abs(ref)) * 100;
 end
 
 %% =========================
@@ -332,7 +333,7 @@ for i = 1:length(methods)
     fprintf('Settling Time  = %.6f s\n', info.SettlingTime);
     fprintf('Overshoot      = %.6f %%\n', info.Overshoot);
     fprintf('Peak Time      = %.6f s\n', info.PeakTime);
-    fprintf('ESS            = %.6f\n', results.(method).ess);
+    fprintf('ESS            = %.6f %%\n', results.(method).ess);
 end
 
 %% =========================
