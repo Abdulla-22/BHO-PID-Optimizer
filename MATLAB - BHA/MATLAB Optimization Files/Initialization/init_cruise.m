@@ -8,8 +8,6 @@ step_amp = 10;
 num = 1;
 den = [m b];
 
-assignin('base','m',m);
-assignin('base','b',b);
 assignin('base','step_amp',step_amp);
 assignin('base','num',num);
 assignin('base','den',den);
