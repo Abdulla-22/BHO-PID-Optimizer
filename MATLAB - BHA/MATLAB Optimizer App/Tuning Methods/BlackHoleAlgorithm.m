@@ -1,16 +1,30 @@
-function best = BlackHoleAlgorithm(costFcn, nPop, MaxIt, VarMin, VarMax, controller_type)
+function [best, history] = BlackHoleAlgorithm(costFcn, nPop, MaxIt, VarMin, VarMax, controller_type, model, stopFcn)
 
 nVar = numel(VarMin);
 
+if nargin < 8 || isempty(stopFcn)
+    stopFcn = @() false;
+end
+
 %% Reset stop flag at start
 setappdata(0, 'BHO_Stop', false);
+
+%% Initialize output history
+history = struct();
+history.Iteration = [];
+history.Kp        = [];
+history.Ki        = [];
+history.Kd        = [];
+history.Cost      = [];
+history.Overshoot = [];
+history.RiseTime  = [];
 
 %% Initialize stars
 star = struct('pos', [], 'cost', []);
 
 for i = 1:nPop
 
-    if shouldStopOptimization()
+    if shouldStopOptimization(stopFcn)
         best = [];
         fprintf('\nOptimization stopped during initialization.\n');
         return;
@@ -23,7 +37,7 @@ end
 %% Main loop
 for it = 1:MaxIt
 
-    if shouldStopOptimization()
+    if shouldStopOptimization(stopFcn)
         best = getCurrentBest(star);
         fprintf('\nOptimization stopped at iteration %d.\n', it);
         return;
@@ -47,7 +61,7 @@ for it = 1:MaxIt
 
     for i = 1:nPop
 
-        if shouldStopOptimization()
+        if shouldStopOptimization(stopFcn)
             best = getCurrentBest(star);
             fprintf('\nOptimization stopped at iteration %d during movement.\n', it);
             return;
@@ -83,7 +97,7 @@ for it = 1:MaxIt
 
     for i = 1:nPop
 
-        if shouldStopOptimization()
+        if shouldStopOptimization(stopFcn)
             best = getCurrentBest(star);
             fprintf('\nOptimization stopped at iteration %d during event horizon check.\n', it);
             return;
@@ -111,6 +125,21 @@ for it = 1:MaxIt
     %% Current best
     [~, idxBest] = min([star.cost]);
     bestStar = star(idxBest);
+
+    %% Expand gains
+    Kfull = expandControllerGainsLocal(bestStar.pos, controller_type);
+
+    %% Calculate actual overshoot and rise time for history
+    [actualOS, actualRT] = evaluateBestStarPerformance(Kfull, model);
+
+    %% Save history for plotting and table
+    history.Iteration(end+1,1) = it;
+    history.Kp(end+1,1)        = Kfull(1);
+    history.Ki(end+1,1)        = Kfull(2);
+    history.Kd(end+1,1)        = Kfull(3);
+    history.Cost(end+1,1)      = bestStar.cost;
+    history.Overshoot(end+1,1) = actualOS;
+    history.RiseTime(end+1,1)  = actualRT;
 
     %% Prepare display arrays
     newPos  = zeros(nPop, nVar);
@@ -203,12 +232,17 @@ end
 %% =========================
 % Local function: stop checker
 %% =========================
-function stopFlag = shouldStopOptimization()
+function stopFlag = shouldStopOptimization(stopFcn)
     drawnow limitrate;
+
+    stopFlag = false;
+
     if isappdata(0, 'BHO_Stop')
         stopFlag = getappdata(0, 'BHO_Stop');
-    else
-        stopFlag = false;
+    end
+
+    if ~stopFlag && ~isempty(stopFcn)
+        stopFlag = stopFcn();
     end
 end
 
@@ -223,4 +257,65 @@ function best = getCurrentBest(star)
 
     [~, idxBest] = min([star.cost]);
     best = star(idxBest).pos;
+end
+
+%% =========================
+% Local function: expand gains to [Kp Ki Kd]
+%% =========================
+function Kfull = expandControllerGainsLocal(Kopt, controller_type)
+
+    switch upper(controller_type)
+        case 'PI'
+            Kfull = [Kopt(1) Kopt(2) 0];
+
+        case 'PD'
+            Kfull = [Kopt(1) 0 Kopt(2)];
+
+        case 'PID'
+            Kfull = [Kopt(1) Kopt(2) Kopt(3)];
+
+        otherwise
+            error('Invalid controller_type.');
+    end
+end
+
+%% =========================
+% Local function: evaluate best star performance
+%% =========================
+function [actualOS, actualRT] = evaluateBestStarPerformance(Kfull, model)
+
+    actualOS = NaN;
+    actualRT = NaN;
+
+    try
+        assignin('base', 'kp', Kfull(1));
+        assignin('base', 'ki', Kfull(2));
+        assignin('base', 'kd', Kfull(3));
+
+        sim_time = evalin('base', 'sim_time');
+        simOut = sim(model, 'StopTime', num2str(sim_time), 'CaptureErrors', 'on');
+
+        if isprop(simOut, 'ErrorMessage') && ~isempty(simOut.ErrorMessage)
+            return;
+        end
+
+        t = simOut.OutputResponse.Time;
+        y = simOut.OutputResponse.Data;
+
+        if evalin('base', 'exist(''step_amp'', ''var'')')
+            ref = evalin('base', 'step_amp');
+        elseif evalin('base', 'exist(''ref'', ''var'')')
+            ref = evalin('base', 'ref');
+        else
+            ref = 1;
+        end
+
+        info = stepinfo(y, t, ref);
+        actualOS = info.Overshoot;
+        actualRT = info.RiseTime;
+
+    catch
+        actualOS = NaN;
+        actualRT = NaN;
+    end
 end

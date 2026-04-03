@@ -1,21 +1,20 @@
 function init_ballandbeam()
 
-% Parameters
-m = 0.111;
-R = 0.015;
-g = 9.8;
-L = 1.0;
-d = 0.03;
-J = 9.99e-6;
+% Read parameters from base workspace (user input from app)
+m = evalin('base','m');
+R = evalin('base','R');
+g = evalin('base','g');
+L = evalin('base','L');
+d = evalin('base','d');
+J = evalin('base','J');
 
-step_amp = 10;
-
-K = (m*g*d)/(L*(J/R^2+m));   %simplifies input
+% Build transfer function using user-defined values
+K = (m * g * d) / (L * (J / R^2 + m));
 
 num = [K];
 den = [1 0 0];
 
-assignin('base','step_amp',step_amp);
+% Assign only derived values
 assignin('base','num',num);
 assignin('base','den',den);
 

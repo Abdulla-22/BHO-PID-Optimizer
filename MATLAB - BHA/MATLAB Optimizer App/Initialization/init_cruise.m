@@ -1,16 +1,14 @@
 function init_cruise()
 
-m = 1000;
-b = 50;
+% Read parameters from base workspace (user input from app)
+m = evalin('base','m');
+b = evalin('base','b');
 
-step_amp = 10;
-
+% Build transfer function using user-defined values
 num = 1;
 den = [m b];
 
-assignin('base','m',m);
-assignin('base','b',b);
-assignin('base','step_amp',step_amp);
+% Assign only derived values
 assignin('base','num',num);
 assignin('base','den',den);
 
