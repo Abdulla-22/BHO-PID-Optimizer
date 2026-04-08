@@ -1,0 +1,16 @@
+Pipe:
+OD 1.25 inch = 32 mm
+ID: 20 - 20.5 mm
+Thickness: 6 mm
+
+Bearing place: 21.5 mm
+Thickness: 5 mm
+
+Bearing:
+OD: (21.9) - 22 mm
+ID: (7.9) - 8 mm
+Thickness: 7 mm
+
+Screw: 6 mm diameter 
+Overall length : 40 mm
+Length of straight piece: around 37 mm
