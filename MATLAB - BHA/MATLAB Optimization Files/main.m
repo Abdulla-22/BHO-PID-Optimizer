@@ -8,6 +8,7 @@ close all;
 % 1 = Ball & Beam
 % 2 = Cruise Control
 % 3 = Motor Speed
+% 4 = Custom Transfer Function
 %
 % controller_type:
 % 'PI'  = Proportional Integral
@@ -17,10 +18,23 @@ close all;
 % optimization_mode:
 % 1 = BEST
 % 2 = CONSTRAINED
+%
+% comparison:
+% true  = Show BHO vs ZN
+% false = Show BHO only
 %% =========================
 system_id = 3;
 controller_type = 'PI';
-optimization_mode = 2;
+optimization_mode = 1;
+comparison = false;
+
+%% =========================
+% Custom transfer function
+% Used only when system_id = 4
+%% =========================
+custom_tf.num = [1];
+custom_tf.den = [1 5];
+custom_tf.step_amp = 1;
 
 %% =========================
 % User performance specifications
@@ -33,8 +47,8 @@ wantedess       = 1.0;     % In percentage
 %% =========================
 % Optimization settings
 %% =========================
-nPop     = 20;
-MaxIt    = 20;
+nPop     = 10;
+MaxIt    = 10;
 sim_time = 5;
 
 %% =========================
@@ -46,7 +60,7 @@ if system_id == 1 && strcmpi(controller_type, 'PI')
 end
 
 if system_id == 2 && strcmpi(controller_type, 'PD')
-    warning(['PD controller may not be 100% efficient for the Cruise Control system. ', ...
+    warning(['PD controller may not be 100%% efficient for the Cruise Control system. ', ...
              'It may cause steady-state error and may not track the desired reference accurately.']);
 end
 
@@ -96,6 +110,8 @@ end
 %% =========================
 % Select system, model name, initialization, and cost function
 %% =========================
+isCustomSystem = false;
+
 switch upper(controller_type)
 
     case 'PI'
@@ -115,8 +131,14 @@ switch upper(controller_type)
                 initFcn    = @init_motor;
                 costFcnRaw = @(K) cost_motor(K, model);
 
+            case 4
+                model      = "CustomSystemPI";
+                initFcn    = @() assignCustomTFToBase(custom_tf);
+                costFcnRaw = @(K) cost_custom(K, model);
+                isCustomSystem = true;
+
             otherwise
-                error('Invalid system_id. Use 1, 2, or 3.');
+                error('Invalid system_id. Use 1, 2, 3, or 4.');
         end
 
     case 'PD'
@@ -136,8 +158,14 @@ switch upper(controller_type)
                 initFcn    = @init_motor;
                 costFcnRaw = @(K) cost_motor(K, model);
 
+            case 4
+                model      = "CustomSystemPD";
+                initFcn    = @() assignCustomTFToBase(custom_tf);
+                costFcnRaw = @(K) cost_custom(K, model);
+                isCustomSystem = true;
+
             otherwise
-                error('Invalid system_id. Use 1, 2, or 3.');
+                error('Invalid system_id. Use 1, 2, 3, or 4.');
         end
 
     case 'PID'
@@ -157,8 +185,14 @@ switch upper(controller_type)
                 initFcn    = @init_motor;
                 costFcnRaw = @(K) cost_motor(K, model);
 
+            case 4
+                model      = "CustomSystemPID";
+                initFcn    = @() assignCustomTFToBase(custom_tf);
+                costFcnRaw = @(K) cost_custom(K, model);
+                isCustomSystem = true;
+
             otherwise
-                error('Invalid system_id. Use 1, 2, or 3.');
+                error('Invalid system_id. Use 1, 2, 3, or 4.');
         end
 
     otherwise
@@ -226,13 +260,14 @@ costFcn = @(Kopt) controllerCostWrapper(Kopt, controller_type, costFcnRaw);
 %% =========================
 % Initialize storage for comparison
 %% =========================
-if optimization_mode == 1
+if comparison
     methods = {'BHO', 'ZN'};
 else
     methods = {'BHO'};
 end
 
 results = struct();
+validMethods = {};
 
 for i = 1:length(methods)
 
@@ -245,8 +280,23 @@ for i = 1:length(methods)
             bestK = expandControllerGains(bestKopt, controller_type);
 
         case 'ZN'
-            [Ku, Tu] = estimateUltimateGain(model);
+            if isCustomSystem
+                [Ku, Tu] = estimateUltimateGainCustom(model, custom_tf, sim_time);
+            else
+                [Ku, Tu] = estimateUltimateGain(model);
+            end
+
+            if isnan(Ku) || isnan(Tu) || isinf(Ku) || isinf(Tu)
+                warning('ZN tuning skipped because Ku/Tu could not be estimated.');
+                continue;
+            end
+
             bestK = znGainsByType(Ku, Tu, controller_type);
+
+            if any(isnan(bestK)) || any(isinf(bestK))
+                warning('ZN tuning skipped because the computed gains are invalid.');
+                continue;
+            end
 
         otherwise
             error('Unknown tuning method');
@@ -259,6 +309,10 @@ for i = 1:length(methods)
     assignin('base', 'ki', bestK(2));
     assignin('base', 'kd', bestK(3));
 
+    if isCustomSystem
+        assignCustomTFToBase(custom_tf);
+    end
+
     simOut = sim(model, 'StopTime', num2str(sim_time), 'CaptureErrors', 'on');
 
     if ~isempty(simOut.ErrorMessage)
@@ -266,23 +320,43 @@ for i = 1:length(methods)
     end
 
     resp = simOut.OutputResponse;
-    t = resp.Time;
-    y = resp.Data;
+
+    t = resp.Time(:);
+    y = squeeze(resp.Data);
+
+    if isempty(y)
+        error('OutputResponse.Data is empty in %s method.', method);
+    end
+
+    if isrow(y)
+        y = y.';
+    end
+
+    if size(y,2) > 1
+        y = y(:,1);
+    end
 
     ref = getReferenceFromBase();
 
     try
         info = stepinfo(y, t, ref, 'SettlingTimeThreshold', 0.02);
     catch
-        info = stepinfo(y, t);
+        info = stepinfo(y, t, ref);
     end
 
     results.(method).t        = t;
     results.(method).y        = y;
     results.(method).Gains    = bestK;
     results.(method).stepinfo = info;
+
     actual_ESS = abs(ref - y(end));
-    results.(method).ess = (actual_ESS / abs(ref)) * 100;
+    if abs(ref) > 0
+        results.(method).ess = (actual_ESS / abs(ref)) * 100;
+    else
+        results.(method).ess = actual_ESS;
+    end
+
+    validMethods{end + 1} = method; %#ok<AGROW>
 end
 
 %% =========================
@@ -290,27 +364,42 @@ end
 %% =========================
 set_param(model, 'FastRestart', 'off');
 
+if isempty(validMethods)
+    error('No valid tuning method could be completed.');
+end
+
 %% =========================
-% Plot comparison
+% Plot result(s)
 %% =========================
 figure;
 hold on;
 grid on;
 
-colors = {'b', 'r'};
+colors = {'b', 'r', 'k', 'g'};
 
-for i = 1:length(methods)
-    method = methods{i};
+for i = 1:length(validMethods)
+    method = validMethods{i};
 
-    plot(results.(method).t, results.(method).y, ...
+    tplot = results.(method).t(:);
+    yplot = results.(method).y(:);
+
+    plot(tplot, yplot, ...
         'LineWidth', 2, ...
-        'Color', colors{i});
+        'Color', colors{i}, ...
+        'DisplayName', method);
 end
 
 xlabel('Time [s]');
 ylabel('Output');
-title([upper(controller_type) ' Comparison: BHO vs Ziegler-Nichols']);
-legend(methods, 'Location', 'best');
+
+if length(validMethods) > 1
+    title([upper(controller_type) ' Comparison']);
+else
+    title([upper(controller_type) ' Response']);
+end
+
+legend('show', 'Location', 'best');
+hold off;
 
 %% =========================
 % Display results
@@ -321,11 +410,11 @@ fprintf('=== OPTIMIZATION MODE = %d ===\n', optimization_mode);
 if optimization_mode == 2
     fprintf('Max Overshoot     = %.6f %%\n', wantedovershoot);
     fprintf('Max Rise Time     = %.6f s\n', wantedrisetime);
-    fprintf('Max ESS           = %.6f\n', wantedess);
+    fprintf('Max ESS           = %.6f %%\n', wantedess);
 end
 
-for i = 1:length(methods)
-    method = methods{i};
+for i = 1:length(validMethods)
+    method = validMethods{i};
     info = results.(method).stepinfo;
 
     fprintf('\n=== Step info (%s) ===\n', method);
@@ -334,6 +423,28 @@ for i = 1:length(methods)
     fprintf('Overshoot      = %.6f %%\n', info.Overshoot);
     fprintf('Peak Time      = %.6f s\n', info.PeakTime);
     fprintf('ESS            = %.6f %%\n', results.(method).ess);
+end
+
+%% =========================
+% Local function: assign custom TF to base workspace
+%% =========================
+function assignCustomTFToBase(custom_tf)
+
+    if ~isstruct(custom_tf)
+        error('custom_tf must be a struct.');
+    end
+
+    if ~isfield(custom_tf, 'num') || ~isfield(custom_tf, 'den') || ~isfield(custom_tf, 'step_amp')
+        error('custom_tf must contain num, den, and step_amp.');
+    end
+
+    if isempty(custom_tf.num) || isempty(custom_tf.den)
+        error('custom_tf.num and custom_tf.den cannot be empty.');
+    end
+
+    assignin('base', 'num', custom_tf.num);
+    assignin('base', 'den', custom_tf.den);
+    assignin('base', 'step_amp', custom_tf.step_amp);
 end
 
 %% =========================
@@ -379,17 +490,15 @@ function ref = getReferenceFromBase()
 
     if evalin('base', 'exist(''step_amp'', ''var'')')
         ref = evalin('base', 'step_amp');
-
     elseif evalin('base', 'exist(''ref'', ''var'')')
         ref = evalin('base', 'ref');
-
     else
         ref = 1;
     end
 end
 
 %% =========================
-% Local function: Estimate Ku and Tu without toolbox
+% Local function: estimate Ku and Tu for normal systems
 %% =========================
 function [Ku, Tu] = estimateUltimateGain(model)
 
@@ -442,6 +551,60 @@ function [Ku, Tu] = estimateUltimateGain(model)
     end
 
     warning('No sustained oscillation detected. Use Ku and Tu manually.');
-    Ku = Kp;
-    Tu = 1;
+end
+
+%% =========================
+% Local function: estimate Ku and Tu for custom system
+%% =========================
+function [Ku, Tu] = estimateUltimateGainCustom(model, custom_tf, sim_time)
+
+    Kp = 0.5;
+    Ki = 0;
+    Kd = 0;
+
+    maxIter = 20;
+    dKp = 0.5;
+
+    Ku = NaN;
+    Tu = NaN;
+
+    for k = 1:maxIter
+
+        assignin('base', 'kp', Kp);
+        assignin('base', 'ki', Ki);
+        assignin('base', 'kd', Kd);
+
+        assignin('base', 'num', custom_tf.num);
+        assignin('base', 'den', custom_tf.den);
+        assignin('base', 'step_amp', custom_tf.step_amp);
+
+        simOut = sim(model, 'StopTime', num2str(sim_time), 'CaptureErrors', 'on');
+
+        if ~isempty(simOut.ErrorMessage)
+            warning('Simulation error while estimating Ku/Tu at Kp = %.4f', Kp);
+            break;
+        end
+
+        y = simOut.OutputResponse.Data;
+        t = simOut.OutputResponse.Time;
+
+        if isempty(y) || isempty(t) || any(isnan(y)) || any(isinf(y)) || max(abs(y)) > 1e6
+            warning('Unstable or invalid response detected while estimating Ku/Tu at Kp = %.4f', Kp);
+            break;
+        end
+
+        dy = diff(y);
+        idx = find(dy(1:end-1) .* dy(2:end) < 0);
+
+        if numel(idx) >= 6
+            Ku = Kp;
+            crossingTimes = t(idx + 1);
+            Tu = mean(diff(crossingTimes)) * 2;
+            return;
+        end
+
+        Kp = Kp + dKp;
+    end
+
+    warning('No sustained oscillation detected for custom system. Use Ku and Tu manually.');
 end
