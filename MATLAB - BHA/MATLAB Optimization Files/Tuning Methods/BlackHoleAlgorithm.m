@@ -1,4 +1,4 @@
-function best = BlackHoleAlgorithm(costFcn, nPop, MaxIt, VarMin, VarMax, controller_type)
+function [best, bestHistory] = BlackHoleAlgorithm(costFcn, nPop, MaxIt, VarMin, VarMax, controller_type, model)
 
 nVar = numel(VarMin);
 
@@ -12,6 +12,7 @@ for i = 1:nPop
 
     if shouldStopOptimization()
         best = [];
+        bestHistory = table();
         fprintf('\nOptimization stopped during initialization.\n');
         return;
     end
@@ -19,6 +20,9 @@ for i = 1:nPop
     star(i).pos  = VarMin + rand(1, nVar) .* (VarMax - VarMin);
     star(i).cost = costFcn(star(i).pos);
 end
+
+%% Initialize best history table
+bestHistory = table();
 
 %% Main loop
 for it = 1:MaxIt
@@ -112,6 +116,39 @@ for it = 1:MaxIt
     [~, idxBest] = min([star.cost]);
     bestStar = star(idxBest);
 
+    %% Evaluate current best solution with simulation metrics
+    iterationMetrics = evaluateBestStarMetrics(bestStar, controller_type, model);
+
+    %% Append one row to best history
+    newRow = table( ...
+        it, ...
+        iterationMetrics.Kp, ...
+        iterationMetrics.Ki, ...
+        iterationMetrics.Kd, ...
+        bestStar.cost, ...
+        iterationMetrics.RiseTime, ...
+        iterationMetrics.SettlingTime, ...
+        iterationMetrics.Overshoot, ...
+        iterationMetrics.PeakTime, ...
+        iterationMetrics.ESS, ...
+        iterationMetrics.Reference, ...
+        iterationMetrics.FinalValue, ...
+        'VariableNames', { ...
+        'Iteration', ...
+        'Kp', ...
+        'Ki', ...
+        'Kd', ...
+        'Cost', ...
+        'RiseTime', ...
+        'SettlingTime', ...
+        'Overshoot', ...
+        'PeakTime', ...
+        'ESS', ...
+        'Reference', ...
+        'FinalValue'});
+
+    bestHistory = [bestHistory; newRow]; %#ok<AGROW>
+
     %% Prepare display arrays
     newPos  = zeros(nPop, nVar);
     newCost = zeros(nPop, 1);
@@ -170,7 +207,8 @@ for it = 1:MaxIt
             varNamesNew{1}, varNamesNew{2}, varNamesNew{3}, ...
             'NewCost', ...
             'R', 'Distance', 'Status'});
-        disp(T)
+
+        printPlainTable(T);
 
     elseif nVar == 2
         T = table( ...
@@ -189,10 +227,16 @@ for it = 1:MaxIt
             varNamesNew{1}, varNamesNew{2}, ...
             'NewCost', ...
             'R', 'Distance', 'Status'});
-        disp(T)
+
+        printPlainTable(T);
     end
 
     fprintf('Iteration %d Best Cost = %.6f\n', it, bestStar.cost);
+    fprintf('Best Kp = %.6f | Ki = %.6f | Kd = %.6f\n', ...
+        iterationMetrics.Kp, iterationMetrics.Ki, iterationMetrics.Kd);
+    fprintf('Rise Time = %.6f | Settling Time = %.6f | Overshoot = %.6f | Peak Time = %.6f | ESS = %.6f\n', ...
+        iterationMetrics.RiseTime, iterationMetrics.SettlingTime, ...
+        iterationMetrics.Overshoot, iterationMetrics.PeakTime, iterationMetrics.ESS);
 end
 
 %% Final best
@@ -201,26 +245,199 @@ best = getCurrentBest(star);
 end
 
 %% =========================
-% Local function: stop checker
+% Local function: stop flag check
 %% =========================
 function stopFlag = shouldStopOptimization()
-    drawnow limitrate;
-    if isappdata(0, 'BHO_Stop')
-        stopFlag = getappdata(0, 'BHO_Stop');
-    else
-        stopFlag = false;
-    end
+
+if isappdata(0, 'BHO_Stop')
+    stopFlag = getappdata(0, 'BHO_Stop');
+else
+    stopFlag = false;
+end
+
 end
 
 %% =========================
-% Local function: current best
+% Local function: get current best star
 %% =========================
 function best = getCurrentBest(star)
-    if isempty(star)
-        best = [];
+
+if isempty(star)
+    best = [];
+    return;
+end
+
+allCosts = [star.cost];
+[~, idxBest] = min(allCosts);
+best = star(idxBest).pos;
+
+end
+
+%% =========================
+% Local function: evaluate best star metrics
+%% =========================
+function metrics = evaluateBestStarMetrics(bestStar, controller_type, model)
+
+Kfull = expandControllerGainsLocal(bestStar.pos, controller_type);
+
+assignin('base', 'kp', Kfull(1));
+assignin('base', 'ki', Kfull(2));
+assignin('base', 'kd', Kfull(3));
+
+metrics.Kp = Kfull(1);
+metrics.Ki = Kfull(2);
+metrics.Kd = Kfull(3);
+metrics.Reference = NaN;
+metrics.FinalValue = NaN;
+metrics.RiseTime = NaN;
+metrics.SettlingTime = NaN;
+metrics.Overshoot = NaN;
+metrics.PeakTime = NaN;
+metrics.ESS = NaN;
+
+try
+    if evalin('base', 'exist(''sim_time'',''var'')')
+        sim_time = evalin('base', 'sim_time');
+    else
+        sim_time = 10;
+    end
+
+    simOut = sim(model, 'StopTime', num2str(sim_time), 'CaptureErrors', 'on');
+
+    if ~isempty(simOut.ErrorMessage)
         return;
     end
 
-    [~, idxBest] = min([star.cost]);
-    best = star(idxBest).pos;
+    resp = simOut.OutputResponse;
+    t = squeeze(resp.Time);
+    y = squeeze(resp.Data);
+
+    t = t(:);
+    y = y(:);
+
+    if isempty(t) || isempty(y) || numel(t) ~= numel(y)
+        return;
+    end
+
+    if evalin('base', 'exist(''step_amp'',''var'')')
+        ref = evalin('base', 'step_amp');
+    elseif evalin('base', 'exist(''ref'',''var'')')
+        ref = evalin('base', 'ref');
+    else
+        ref = 1;
+    end
+
+    metrics.Reference = ref;
+    metrics.FinalValue = y(end);
+
+    try
+        info = stepinfo(y, t, ref, 'SettlingTimeThreshold', 0.02);
+    catch
+        info = stepinfo(y, t, ref);
+    end
+
+    metrics.RiseTime = info.RiseTime;
+    metrics.SettlingTime = info.SettlingTime;
+    metrics.Overshoot = info.Overshoot;
+    metrics.PeakTime = info.PeakTime;
+
+    actual_ess = abs(ref - y(end));
+    if abs(ref) > 0
+        metrics.ESS = (actual_ess / abs(ref)) * 100;
+    else
+        metrics.ESS = actual_ess;
+    end
+
+catch
+end
+
+end
+
+%% =========================
+% Local function: expand controller gains
+%% =========================
+function Kfull = expandControllerGainsLocal(Kopt, controller_type)
+
+switch upper(controller_type)
+    case 'PI'
+        Kfull = [Kopt(1) Kopt(2) 0];
+
+    case 'PD'
+        Kfull = [Kopt(1) 0 Kopt(2)];
+
+    case 'PID'
+        Kfull = [Kopt(1) Kopt(2) Kopt(3)];
+
+    otherwise
+        error('Invalid controller_type. Use PI, PD, or PID.');
+end
+
+end
+
+%% =========================
+% Local function: print plain text table
+%% =========================
+function printPlainTable(T)
+
+headers = T.Properties.VariableNames;
+nCols = numel(headers);
+nRows = height(T);
+
+colWidths = zeros(1, nCols);
+cellText = cell(nRows, nCols);
+
+for j = 1:nCols
+    colWidths(j) = length(headers{j});
+end
+
+for i = 1:nRows
+    for j = 1:nCols
+        value = T{i, j};
+
+        if isstring(value) || ischar(value)
+            txt = char(string(value));
+
+        elseif isnumeric(value) || islogical(value)
+            if isscalar(value)
+                txt = sprintf('%.6g', value);
+            else
+                txt = mat2str(value);
+            end
+
+        elseif iscategorical(value)
+            txt = char(string(value));
+
+        else
+            txt = char(string(value));
+        end
+
+        cellText{i, j} = txt;
+        colWidths(j) = max(colWidths(j), length(txt));
+    end
+end
+
+separator = '';
+for j = 1:nCols
+    separator = [separator, '+', repmat('-', 1, colWidths(j) + 2)]; %#ok<AGROW>
+end
+separator = [separator, '+'];
+
+fprintf('%s\n', separator);
+
+for j = 1:nCols
+    fprintf('| %-*s ', colWidths(j), headers{j});
+end
+fprintf('|\n');
+
+fprintf('%s\n', separator);
+
+for i = 1:nRows
+    for j = 1:nCols
+        fprintf('| %-*s ', colWidths(j), cellText{i, j});
+    end
+    fprintf('|\n');
+end
+
+fprintf('%s\n', separator);
+
 end
