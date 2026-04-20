@@ -29,7 +29,7 @@ close all;
 %% =========================
 system_id = 4;
 controller_type = 'PID';
-optimization_mode = 1;
+optimization_mode = 2;
 comparison = true;
 collect_results = true;
 
@@ -46,8 +46,8 @@ custom_tf.step_amp = 1;
 % Used only in CONSTRAINED mode
 %% =========================
 wantedovershoot = 1.0;     % In percentage
-wantedrisetime  = 0.01;    % In seconds
-wantedess       = 1.0;     % In percentage
+wantedrisetime  = 0.03;    % In seconds
+wantedess       = 0.1;     % In percentage
 
 %% =========================
 % Optimization settings

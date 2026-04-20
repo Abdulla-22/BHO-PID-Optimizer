@@ -1,19 +1,20 @@
 function J = cost_motor(K, model)
     % --- Controller gains assignment ---
-    kp = K(1); 
-    ki = K(2); 
+    kp = K(1);
+    ki = K(2);
     kd = K(3);
-    
+
     assignin('base','kp',kp);
     assignin('base','ki',ki);
     assignin('base','kd',kd);
 
     % --- Fetch parameters and targets from workspace ---
-    sim_time        = evalin('base', 'sim_time');
-    wantedovershoot = evalin('base', 'wantedovershoot');
-    wantedrisetime  = evalin('base', 'wantedrisetime');
-    wantedess       = evalin('base', 'wantedess');   % Expected in %
-    ref             = evalin('base', 'step_amp');
+    sim_time          = evalin('base', 'sim_time');
+    optimization_mode = evalin('base', 'optimization_mode');
+    wantedovershoot   = evalin('base', 'wantedovershoot');
+    wantedrisetime    = evalin('base', 'wantedrisetime');
+    wantedess         = evalin('base', 'wantedess');   % Expected in %
+    ref               = evalin('base', 'step_amp');
 
     % --- Execute Simulink Model ---
     try
@@ -21,58 +22,82 @@ function J = cost_motor(K, model)
         t = simOut.OutputResponse.Time;
         y = simOut.OutputResponse.Data;
     catch
-        J = 1e8; % High penalty for simulation crash
+        J = 1e8;
         return;
     end
 
     % --- Performance Analysis ---
-    if isempty(y) || isnan(y(end))
+    if isempty(y) || isnan(y(end)) || isempty(t)
         J = 1e8;
         return;
     end
-    
-    info = stepinfo(y, t, ref);
+
+    try
+        info = stepinfo(y, t, ref);
+    catch
+        J = 1e7;
+        return;
+    end
+
     actual_OS = info.Overshoot;
     actual_RT = info.RiseTime;
-    
-    % Check for instability
+
     if isnan(actual_OS) || isnan(actual_RT)
         J = 1e7;
         return;
     end
 
-    % --- Calculate Errors (Normalized) ---
-    % 1. IAE (Integral Absolute Error)
+    % --- Common metrics ---
     error_signal = abs(ref - y);
-    IAE = trapz(t, error_signal); 
-    IAE_norm = IAE / (ref * sim_time);
+    IAE = trapz(t, error_signal);
 
-    % 2. Overshoot Error
-    E_OS = max(0, (actual_OS - wantedovershoot) / 100);
+    if abs(ref) < 1e-12
+        IAE_norm = IAE / max(sim_time, 1e-12);
+        actual_ESS_percent = abs(y(end)) * 100;
+    else
+        IAE_norm = IAE / (abs(ref) * sim_time);
+        actual_ESS = abs(ref - y(end));
+        actual_ESS_percent = (actual_ESS / abs(ref)) * 100;
+    end
 
-    % 3. Rise Time Error
-    E_RT = max(0, (actual_RT - wantedrisetime) / sim_time);
+    % --- BEST mode ---
+    if optimization_mode == 1
+        E_OS  = actual_OS / 100;
+        E_RT  = actual_RT / max(sim_time, 1e-12);
+        E_ESS = actual_ESS_percent / 100;
 
-    % 4. Steady-State Error in percentage
-    actual_ESS = abs(ref - y(end));
-    actual_ESS_percent = (actual_ESS / abs(ref)) * 100;
+        w1 = 0.50;
+        w2 = 0.20;
+        w3 = 0.15;
+        w4 = 0.15;
 
-    % Penalty only if ESS exceeds user target
-    E_ESS = max(0, (actual_ESS_percent - wantedess) / 100);
+        J = (w1 * IAE_norm) + (w2 * E_OS) + (w3 * E_RT) + (w4 * E_ESS);
+        return;
+    end
 
-    % --- Weighted Sum (Weights sum = 1) ---
-    w1 = 0.4;   % Weight for tracking accuracy (IAE)
-    w2 = 0.3;   % Weight for Overshoot constraint
-    w3 = 0.2;   % Weight for Rise Time constraint
-    w4 = 0.1;   % Weight for Steady-State Error constraint
-    
-    % Total Cost Function
+    % --- CONSTRAINED mode ---
+    % This mode chases the requested values, not only maximum limits
+    E_OS  = abs(actual_OS - wantedovershoot) / max(wantedovershoot, 1e-6);
+    E_RT  = abs(actual_RT - wantedrisetime)  / max(wantedrisetime,  1e-6);
+    E_ESS = abs(actual_ESS_percent - wantedess) / max(wantedess, 1e-6);
+
+    w1 = 0.15;   % Tracking
+    w2 = 0.30;   % Overshoot target matching
+    w3 = 0.30;   % Rise time target matching
+    w4 = 0.25;   % ESS target matching
+
     J = (w1 * IAE_norm) + (w2 * E_OS) + (w3 * E_RT) + (w4 * E_ESS);
-    
-    % Add a severe multiplier if requirements are not met
-    if actual_OS > wantedovershoot || ...
-       actual_RT > wantedrisetime || ...
-       actual_ESS_percent > wantedess
-        J = J * 10; 
+
+    % Extra penalty for violating requested limits
+    if actual_OS > wantedovershoot
+        J = J + 5 * ((actual_OS - wantedovershoot) / max(wantedovershoot, 1e-6));
+    end
+
+    if actual_RT > wantedrisetime
+        J = J + 5 * ((actual_RT - wantedrisetime) / max(wantedrisetime, 1e-6));
+    end
+
+    if actual_ESS_percent > wantedess
+        J = J + 5 * ((actual_ESS_percent - wantedess) / max(wantedess, 1e-6));
     end
 end

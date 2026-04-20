@@ -10,10 +10,12 @@ function J = cost_custom(K, model)
     assignin('base','kd',kd);
 
     %% Get simulation settings and targets
-    sim_time        = evalin('base','sim_time');
-    wantedovershoot = evalin('base','wantedovershoot');
-    wantedrisetime  = evalin('base','wantedrisetime');
-    ref             = evalin('base','step_amp');
+    sim_time          = evalin('base','sim_time');
+    optimization_mode = evalin('base','optimization_mode');
+    wantedovershoot   = evalin('base','wantedovershoot');
+    wantedrisetime    = evalin('base','wantedrisetime');
+    wantedess         = evalin('base','wantedess');
+    ref               = evalin('base','step_amp');
 
     %% Run simulation
     try
@@ -58,24 +60,56 @@ function J = cost_custom(K, model)
         return;
     end
 
-    %% Tracking error
+    %% Common metrics
     IAE = trapz(t, abs(ref - y));
-    IAE_norm = IAE / (abs(ref) * sim_time + eps);
 
-    %% Constraint errors
-    E_OS = max(0, (actual_OS - wantedovershoot) / 100);
-    E_RT = max(0, (actual_RT - wantedrisetime) / sim_time);
+    if abs(ref) < 1e-12
+        IAE_norm = IAE / max(sim_time, 1e-12);
+        actual_ESS_percent = abs(y(end)) * 100;
+    else
+        IAE_norm = IAE / (abs(ref) * sim_time);
+        actual_ESS = abs(ref - y(end));
+        actual_ESS_percent = (actual_ESS / abs(ref)) * 100;
+    end
 
-    %% Weighted cost
-    w1 = 0.5;
-    w2 = 0.3;
-    w3 = 0.2;
+    %% BEST mode
+    if optimization_mode == 1
+        E_OS  = actual_OS / 100;
+        E_RT  = actual_RT / max(sim_time, 1e-12);
+        E_ESS = actual_ESS_percent / 100;
 
-    J = (w1 * IAE_norm) + (w2 * E_OS) + (w3 * E_RT);
+        w1 = 0.50;
+        w2 = 0.20;
+        w3 = 0.15;
+        w4 = 0.15;
 
-    %% Penalty if user specs are violated
-    if actual_OS > wantedovershoot || actual_RT > wantedrisetime
-        J = J * 10;
+        J = (w1 * IAE_norm) + (w2 * E_OS) + (w3 * E_RT) + (w4 * E_ESS);
+        return;
+    end
+
+    %% CONSTRAINED mode
+    E_OS  = abs(actual_OS - wantedovershoot) / max(wantedovershoot, 1e-6);
+    E_RT  = abs(actual_RT - wantedrisetime)  / max(wantedrisetime, 1e-6);
+    E_ESS = abs(actual_ESS_percent - wantedess) / max(wantedess, 1e-6);
+
+    w1 = 0.20;   % Tracking
+    w2 = 0.30;   % Overshoot target matching
+    w3 = 0.30;   % Rise time target matching
+    w4 = 0.20;   % ESS target matching
+
+    J = (w1 * IAE_norm) + (w2 * E_OS) + (w3 * E_RT) + (w4 * E_ESS);
+
+    %% Extra penalty for violating requested limits
+    if actual_OS > wantedovershoot
+        J = J + 5 * ((actual_OS - wantedovershoot) / max(wantedovershoot, 1e-6));
+    end
+
+    if actual_RT > wantedrisetime
+        J = J + 5 * ((actual_RT - wantedrisetime) / max(wantedrisetime, 1e-6));
+    end
+
+    if actual_ESS_percent > wantedess
+        J = J + 5 * ((actual_ESS_percent - wantedess) / max(wantedess, 1e-6));
     end
 
 end
