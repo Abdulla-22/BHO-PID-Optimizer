@@ -79,10 +79,10 @@ function J = cost_ballandbeam(K, model)
         E_ESS = actual_ESS_percent / 100;
 
         % Ball and Beam needs strong tracking and low overshoot
-        w1 = 0.45;
-        w2 = 0.25;
-        w3 = 0.15;
-        w4 = 0.15;
+        w1 = 0.20;
+        w2 = 0.30;
+        w3 = 0.25;
+        w4 = 0.25;
 
         J = (w1 * IAE_norm) + (w2 * E_OS) + (w3 * E_RT) + (w4 * E_ESS);
         return;
@@ -94,9 +94,9 @@ function J = cost_ballandbeam(K, model)
     E_ESS = abs(actual_ESS_percent - wantedess) / max(wantedess, 1e-6);
 
     w1 = 0.20;   % Tracking
-    w2 = 0.35;   % Overshoot target matching
+    w2 = 0.30;   % Overshoot target matching
     w3 = 0.25;   % Rise time target matching
-    w4 = 0.20;   % ESS target matching
+    w4 = 0.25;   % ESS target matching
 
     J = (w1 * IAE_norm) + (w2 * E_OS) + (w3 * E_RT) + (w4 * E_ESS);
 

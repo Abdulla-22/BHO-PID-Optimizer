@@ -66,10 +66,10 @@ function J = cost_motor(K, model)
         E_RT  = actual_RT / max(sim_time, 1e-12);
         E_ESS = actual_ESS_percent / 100;
 
-        w1 = 0.50;
-        w2 = 0.20;
-        w3 = 0.15;
-        w4 = 0.15;
+        w1 = 0.15;
+        w2 = 0.30;
+        w3 = 0.30;
+        w4 = 0.25;
 
         J = (w1 * IAE_norm) + (w2 * E_OS) + (w3 * E_RT) + (w4 * E_ESS);
         return;
