@@ -28,10 +28,10 @@ totalExecutionTimer = tic;
 % true  = Save command window log, BHO iteration history, and plots
 % false = Do not save files
 %% =========================
-system_id = 1;
-controller_type = 'PD';
+system_id = 2;
+controller_type = 'PI';
 optimization_mode = 1;
-collect_results = false;
+collect_results = true;
 
 %% =========================
 % Custom transfer function
@@ -52,8 +52,8 @@ wantedess       = 0.1;     % In percentage
 %% =========================
 % Optimization settings
 %% =========================
-nPop     = 10;
-MaxIt    = 10;
+nPop     = 50;
+MaxIt    = 100;
 sim_time = 5;
 
 %% =========================
@@ -102,11 +102,11 @@ switch upper(controller_type)
 
     case 'PD'
         VarMin = [0 0];
-        VarMax = [1000 100];
+        VarMax = [1000 1000];
 
     case 'PID'
         VarMin = [0 0 0];
-        VarMax = [1000 500 200];
+        VarMax = [1000 1000 1000];
 
     otherwise
         error('Invalid controller_type. Use PI, PD, or PID.');
