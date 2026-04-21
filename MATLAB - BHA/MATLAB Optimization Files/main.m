@@ -19,18 +19,13 @@ close all;
 % 1 = BEST
 % 2 = CONSTRAINED
 %
-% comparison:
-% true  = Show BHO vs ZN
-% false = Show BHO only
-%
 % collect_results:
-% true  = Save command window log and BHO iteration history
+% true  = Save command window log, BHO iteration history, and plots
 % false = Do not save files
 %% =========================
 system_id = 4;
 controller_type = 'PID';
-optimization_mode = 2;
-comparison = true;
+optimization_mode = 1;
 collect_results = true;
 
 %% =========================
@@ -52,8 +47,8 @@ wantedess       = 0.1;     % In percentage
 %% =========================
 % Optimization settings
 %% =========================
-nPop     = 20;
-MaxIt    = 20;
+nPop     = 10;
+MaxIt    = 10;
 sim_time = 5;
 
 %% =========================
@@ -216,19 +211,23 @@ addpath(genpath(modelFolder));
 %% =========================
 % Prepare results saving
 %% =========================
-diaryStarted = false;
-logFilePath  = '';
-csvFilePath  = '';
-pngFilePath  = '';
-bhoHistory   = table();
+diaryStarted       = false;
+logFilePath        = '';
+csvFilePath        = '';
+pngFilePathBHO     = '';
+pngFilePathCompare = '';
+pngFilePathCost    = '';
+bhoHistory         = table();
 
 if collect_results
     systemName = getSystemName(system_id);
     [resultsFolder, baseFileName] = prepareResultsPaths(mainFolder, systemName, controller_type);
 
-    logFilePath = fullfile(resultsFolder, [baseFileName '.txt']);
-    csvFilePath = fullfile(resultsFolder, [baseFileName '.csv']);
-    pngFilePath = fullfile(resultsFolder, [baseFileName '.png']);
+    logFilePath        = fullfile(resultsFolder, [baseFileName '.txt']);
+    csvFilePath        = fullfile(resultsFolder, [baseFileName '.csv']);
+    pngFilePathBHO     = fullfile(resultsFolder, [baseFileName '_BHO.png']);
+    pngFilePathCompare = fullfile(resultsFolder, [baseFileName '_BHO_vs_ZN.png']);
+    pngFilePathCost    = fullfile(resultsFolder, [baseFileName '_Cost_Iteration.png']);
 
     diary off;
     diary(logFilePath);
@@ -236,9 +235,11 @@ if collect_results
 
     fprintf('=============================================\n');
     fprintf('Results collection is enabled.\n');
-    fprintf('Text log file : %s\n', logFilePath);
-    fprintf('CSV results   : %s\n', csvFilePath);
-    fprintf('PNG plot file : %s\n', pngFilePath);
+    fprintf('Text log file         : %s\n', logFilePath);
+    fprintf('CSV results           : %s\n', csvFilePath);
+    fprintf('BHO plot file         : %s\n', pngFilePathBHO);
+    fprintf('BHO vs ZN plot file   : %s\n', pngFilePathCompare);
+    fprintf('Cost/Iteration plot   : %s\n', pngFilePathCost);
     fprintf('=============================================\n\n');
 end
 
@@ -296,13 +297,9 @@ try
     costFcn = @(Kopt) controllerCostWrapper(Kopt, controller_type, costFcnRaw);
 
     %% =========================
-    % Initialize storage for comparison
+    % Always run BHO and ZN
     %% =========================
-    if comparison
-        methods = {'BHO', 'ZN'};
-    else
-        methods = {'BHO'};
-    end
+    methods = {'BHO', 'ZN'};
 
     results = struct();
     validMethods = {};
@@ -411,57 +408,202 @@ try
     %% =========================
     set_param(model, 'FastRestart', 'off');
 
-    if isempty(validMethods)
-        error('No valid tuning method could be completed.');
+    if ~isfield(results, 'BHO')
+        error('BHO result is missing. Plotting cannot continue.');
     end
 
+    ref = getReferenceFromBase();
+
     %% =========================
-    % Plot result(s)
+    % Figure 1: Input + BHO Output
     %% =========================
-    fig = figure;
+    figBHO = figure('Color', 'w');
     hold on;
     grid on;
     box on;
 
-    colors = {'b', 'r', 'k', 'g'};
+    tBHO = results.BHO.t(:);
+    yBHO = results.BHO.y(:);
+    uBHO = ref * ones(size(tBHO));
 
-    for i = 1:length(validMethods)
-        method = validMethods{i};
+    plot(tBHO, uBHO, ...
+        'k--', ...
+        'LineWidth', 2.5, ...
+        'DisplayName', 'Input / Reference');
 
-        tplot = results.(method).t(:);
-        yplot = results.(method).y(:);
+    plot(tBHO, yBHO, ...
+        '-', ...
+        'LineWidth', 2.2, ...
+        'Color', [0.0000 0.4470 0.7410], ...
+        'DisplayName', 'BHO Output');
 
-        plot(tplot, yplot, ...
-            'LineWidth', 2, ...
-            'Color', colors{i}, ...
-            'DisplayName', method);
-    end
+    xlabel('Time [s]', 'FontSize', 12, 'FontWeight', 'bold');
+    ylabel('Output',   'FontSize', 12, 'FontWeight', 'bold');
+    title('BHO Response with Input Signal', ...
+        'FontSize', 13, 'FontWeight', 'bold');
 
-    xlabel('Time [s]');
-    ylabel('Output');
+    legend('show', 'Location', 'best', 'FontSize', 11);
+    set(gca, 'FontSize', 11, 'LineWidth', 1);
 
-    if length(validMethods) > 1
-        title([upper(controller_type) ' Comparison']);
+    xlim([min(tBHO) max(tBHO)]);
+
+    allY_BHO = [uBHO; yBHO];
+    ymin = min(allY_BHO);
+    ymax = max(allY_BHO);
+
+    if ymin == ymax
+        ylim([ymin - 1, ymax + 1]);
     else
-        title([upper(controller_type) ' Response']);
+        yMargin = 0.08 * (ymax - ymin);
+        ylim([ymin - yMargin, ymax + yMargin]);
     end
 
-    legend('show', 'Location', 'best');
     hold off;
 
     %% =========================
-    % Save plot to PNG
+    % Figure 2: Input + BHO Output + ZN Output
+    %% =========================
+    figCompare = figure('Color', 'w');
+    hold on;
+    grid on;
+    box on;
+
+    plot(tBHO, uBHO, ...
+        'k--', ...
+        'LineWidth', 2.5, ...
+        'DisplayName', 'Input / Reference');
+
+    plot(tBHO, yBHO, ...
+        '-', ...
+        'LineWidth', 2.2, ...
+        'Color', [0.0000 0.4470 0.7410], ...
+        'DisplayName', 'BHO Output');
+
+    allY_Compare = [uBHO; yBHO];
+
+    if isfield(results, 'ZN')
+        tZN = results.ZN.t(:);
+        yZN = results.ZN.y(:);
+
+        plot(tZN, yZN, ...
+            '-', ...
+            'LineWidth', 2.2, ...
+            'Color', [0.8500 0.3250 0.0980], ...
+            'DisplayName', 'ZN Output');
+
+        allY_Compare = [allY_Compare; yZN];
+    else
+        warning('ZN result is not available. Second figure will show Input and BHO only.');
+    end
+
+    xlabel('Time [s]', 'FontSize', 12, 'FontWeight', 'bold');
+    ylabel('Output',   'FontSize', 12, 'FontWeight', 'bold');
+    title('BHO and ZN Responses with Input Signal', ...
+        'FontSize', 13, 'FontWeight', 'bold');
+
+    legend('show', 'Location', 'best', 'FontSize', 11);
+    set(gca, 'FontSize', 11, 'LineWidth', 1);
+
+    xlim([min(tBHO) max(tBHO)]);
+
+    ymin = min(allY_Compare);
+    ymax = max(allY_Compare);
+
+    if ymin == ymax
+        ylim([ymin - 1, ymax + 1]);
+    else
+        yMargin = 0.08 * (ymax - ymin);
+        ylim([ymin - yMargin, ymax + yMargin]);
+    end
+
+    hold off;
+
+    %% =========================
+    % Figure 3: Cost / Iteration
+    %% =========================
+    figCost = [];
+    if ~isempty(bhoHistory) && any(strcmp('Iteration', bhoHistory.Properties.VariableNames)) ...
+            && any(strcmp('Cost', bhoHistory.Properties.VariableNames))
+
+        figCost = figure('Color', 'w');
+        hold on;
+        grid on;
+        box on;
+
+        plot(bhoHistory.Iteration, bhoHistory.Cost, ...
+            '-o', ...
+            'LineWidth', 2.2, ...
+            'MarkerSize', 6, ...
+            'Color', [0.4660 0.6740 0.1880], ...
+            'DisplayName', 'Cost Curve');
+
+        xlabel('Iteration', 'FontSize', 12, 'FontWeight', 'bold');
+        ylabel('Cost',      'FontSize', 12, 'FontWeight', 'bold');
+        title('BHO Cost per Iteration', ...
+            'FontSize', 13, 'FontWeight', 'bold');
+
+        legend('show', 'Location', 'best', 'FontSize', 11);
+        set(gca, 'FontSize', 11, 'LineWidth', 1);
+
+        xlim([min(bhoHistory.Iteration) max(bhoHistory.Iteration)]);
+
+        if numel(bhoHistory.Cost) == 1
+            ylim([bhoHistory.Cost(1) - 1, bhoHistory.Cost(1) + 1]);
+        else
+            cmin = min(bhoHistory.Cost);
+            cmax = max(bhoHistory.Cost);
+            if cmin == cmax
+                ylim([cmin - 1, cmax + 1]);
+            else
+                cMargin = 0.08 * (cmax - cmin);
+                ylim([cmin - cMargin, cmax + cMargin]);
+            end
+        end
+
+        hold off;
+    else
+        warning('BHO history is empty or missing Iteration/Cost columns. Cost/Iteration plot was not created.');
+    end
+
+    %% =========================
+    % Save plots to PNG
     %% =========================
     if collect_results
         try
-            exportgraphics(fig, pngFilePath, 'Resolution', 300);
-            fprintf('\nPlot image saved to:\n%s\n', pngFilePath);
+            exportgraphics(figBHO, pngFilePathBHO, 'Resolution', 300);
+            fprintf('\nBHO plot image saved to:\n%s\n', pngFilePathBHO);
         catch
             try
-                saveas(fig, pngFilePath);
-                fprintf('\nPlot image saved to:\n%s\n', pngFilePath);
-            catch ME_png
-                warning('Could not save plot as PNG: %s', ME_png.message);
+                saveas(figBHO, pngFilePathBHO);
+                fprintf('\nBHO plot image saved to:\n%s\n', pngFilePathBHO);
+            catch ME_png1
+                warning('Could not save BHO plot as PNG: %s', ME_png1.message);
+            end
+        end
+
+        try
+            exportgraphics(figCompare, pngFilePathCompare, 'Resolution', 300);
+            fprintf('\nBHO vs ZN plot image saved to:\n%s\n', pngFilePathCompare);
+        catch
+            try
+                saveas(figCompare, pngFilePathCompare);
+                fprintf('\nBHO vs ZN plot image saved to:\n%s\n', pngFilePathCompare);
+            catch ME_png2
+                warning('Could not save BHO vs ZN plot as PNG: %s', ME_png2.message);
+            end
+        end
+
+        if ~isempty(figCost) && isvalid(figCost)
+            try
+                exportgraphics(figCost, pngFilePathCost, 'Resolution', 300);
+                fprintf('\nCost/Iteration plot image saved to:\n%s\n', pngFilePathCost);
+            catch
+                try
+                    saveas(figCost, pngFilePathCost);
+                    fprintf('\nCost/Iteration plot image saved to:\n%s\n', pngFilePathCost);
+                catch ME_png3
+                    warning('Could not save Cost/Iteration plot as PNG: %s', ME_png3.message);
+                end
             end
         end
     end
