@@ -79,10 +79,10 @@ function J = cost_cruise(K, model)
         E_ESS = actual_ESS_percent / 100;
 
         % Cruise Control usually prioritizes steady speed and smooth response
-        w1 = 0.45;
-        w2 = 0.20;
-        w3 = 0.15;
-        w4 = 0.20;
+        w1 = 0.15;
+        w2 = 0.30;
+        w3 = 0.25;
+        w4 = 0.30;
 
         J = (w1 * IAE_norm) + (w2 * E_OS) + (w3 * E_RT) + (w4 * E_ESS);
         return;

@@ -31,7 +31,7 @@ totalExecutionTimer = tic;
 system_id = 2;
 controller_type = 'PI';
 optimization_mode = 1;
-collect_results = true;
+collect_results = false;
 
 %% =========================
 % Custom transfer function
@@ -52,9 +52,9 @@ wantedess       = 0.1;     % In percentage
 %% =========================
 % Optimization settings
 %% =========================
-nPop     = 50;
-MaxIt    = 100;
-sim_time = 5;
+nPop     = 10;
+MaxIt    = 10;
+sim_time = 20;
 
 %% =========================
 % Paths
