@@ -66,10 +66,10 @@ function J = cost_motor(K, model)
         E_RT  = actual_RT / max(sim_time, 1e-12);
         E_ESS = actual_ESS_percent / 100;
 
-        w1 = 0.15;
-        w2 = 0.30;
-        w3 = 0.30;
-        w4 = 0.25;
+        w1 = 0.10;
+        w2 = 0.35;
+        w3 = 0.35;
+        w4 = 0.20;
 
         J = (w1 * IAE_norm) + (w2 * E_OS) + (w3 * E_RT) + (w4 * E_ESS);
         return;
@@ -81,10 +81,10 @@ function J = cost_motor(K, model)
     E_RT  = abs(actual_RT - wantedrisetime)  / max(wantedrisetime,  1e-6);
     E_ESS = abs(actual_ESS_percent - wantedess) / max(wantedess, 1e-6);
 
-    w1 = 0.15;   % Tracking
-    w2 = 0.30;   % Overshoot target matching
-    w3 = 0.30;   % Rise time target matching
-    w4 = 0.25;   % ESS target matching
+    w1 = 0.10;   % Tracking
+    w2 = 0.35;   % Overshoot target matching
+    w3 = 0.35;   % Rise time target matching
+    w4 = 0.20;   % ESS target matching
 
     J = (w1 * IAE_norm) + (w2 * E_OS) + (w3 * E_RT) + (w4 * E_ESS);
 
