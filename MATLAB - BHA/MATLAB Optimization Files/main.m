@@ -3,6 +3,11 @@ clear;
 close all;
 
 %% =========================
+% Start total execution timer
+%% =========================
+totalExecutionTimer = tic;
+
+%% =========================
 % User selections
 % system_id:
 % 1 = Ball & Beam
@@ -23,10 +28,10 @@ close all;
 % true  = Save command window log, BHO iteration history, and plots
 % false = Do not save files
 %% =========================
-system_id = 4;
-controller_type = 'PID';
+system_id = 1;
+controller_type = 'PD';
 optimization_mode = 1;
-collect_results = true;
+collect_results = false;
 
 %% =========================
 % Custom transfer function
@@ -221,7 +226,8 @@ bhoHistory         = table();
 
 if collect_results
     systemName = getSystemName(system_id);
-    [resultsFolder, baseFileName] = prepareResultsPaths(mainFolder, systemName, controller_type);
+    [resultsFolder, baseFileName] = prepareResultsPaths( ...
+        mainFolder, systemName, controller_type, optimization_mode);
 
     logFilePath        = fullfile(resultsFolder, [baseFileName '.txt']);
     csvFilePath        = fullfile(resultsFolder, [baseFileName '.csv']);
@@ -644,6 +650,23 @@ try
         end
     end
 
+    %% =========================
+    % Display total execution time
+    %% =========================
+    totalExecutionTimeSec = toc(totalExecutionTimer);
+    totalExecutionTimeMin = totalExecutionTimeSec / 60;
+    totalExecutionTimeHr  = totalExecutionTimeSec / 3600;
+
+    hoursPart   = floor(totalExecutionTimeSec / 3600);
+    minutesPart = floor(mod(totalExecutionTimeSec, 3600) / 60);
+    secondsPart = mod(totalExecutionTimeSec, 60);
+
+    fprintf('\n=============================================\n');
+    fprintf('Total execution time:\n');
+    fprintf('%02d:%02d:%06.3f\n', ...
+        hoursPart, minutesPart, secondsPart);
+    fprintf('=============================================\n');
+
 catch ME
     try
         if bdIsLoaded(model)
@@ -651,6 +674,25 @@ catch ME
         end
     catch
     end
+
+    totalExecutionTimeSec = toc(totalExecutionTimer);
+    totalExecutionTimeMin = totalExecutionTimeSec / 60;
+    totalExecutionTimeHr  = totalExecutionTimeSec / 3600;
+
+    hoursPart   = floor(totalExecutionTimeSec / 3600);
+    minutesPart = floor(mod(totalExecutionTimeSec, 3600) / 60);
+    secondsPart = mod(totalExecutionTimeSec, 60);
+
+    fprintf('\n=============================================\n');
+    fprintf('Execution stopped بسبب خطأ.\n');
+    fprintf('Elapsed execution time until error:\n');
+    fprintf('Seconds = %.6f s\n', totalExecutionTimeSec);
+    fprintf('Minutes = %.6f min\n', totalExecutionTimeMin);
+    fprintf('Hours   = %.6f hr\n', totalExecutionTimeHr);
+    fprintf('Formatted time = %02d:%02d:%06.3f\n', ...
+        hoursPart, minutesPart, secondsPart);
+    fprintf('=============================================\n');
+
     rethrow(ME);
 end
 
@@ -744,14 +786,29 @@ end
 %% =========================
 % Local function: prepare result paths
 %% =========================
-function [resultsFolder, baseFileName] = prepareResultsPaths(mainFolder, systemName, controller_type)
+function [resultsFolder, baseFileName] = prepareResultsPaths(mainFolder, systemName, controller_type, optimization_mode)
     resultsRoot = fullfile(mainFolder, 'Results');
 
     if ~isfolder(resultsRoot)
         mkdir(resultsRoot);
     end
 
-    resultsFolder = fullfile(resultsRoot, systemName, upper(controller_type));
+    controllerFolder = fullfile(resultsRoot, systemName, upper(controller_type));
+
+    if ~isfolder(controllerFolder)
+        mkdir(controllerFolder);
+    end
+
+    switch optimization_mode
+        case 1
+            modeFolderName = 'BestValuesMode';
+        case 2
+            modeFolderName = 'WantedValueMode';
+        otherwise
+            error('Invalid optimization_mode. Use 1 for BEST or 2 for CONSTRAINED.');
+    end
+
+    resultsFolder = fullfile(controllerFolder, modeFolderName);
 
     if ~isfolder(resultsFolder)
         mkdir(resultsFolder);
