@@ -29,7 +29,7 @@ totalExecutionTimer = tic;
 % false = Do not save files
 %% =========================
 system_id = 1;
-controller_type = 'PD';
+controller_type = 'PID';
 optimization_mode = 1;
 collect_results = true;
 
