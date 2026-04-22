@@ -28,8 +28,8 @@ totalExecutionTimer = tic;
 % true  = Save command window log, BHO iteration history, and plots
 % false = Do not save files
 %% =========================
-system_id = 4;
-controller_type = 'PD';
+system_id = 3;
+controller_type = 'PID';
 optimization_mode = 1;
 collect_results = true;
 
