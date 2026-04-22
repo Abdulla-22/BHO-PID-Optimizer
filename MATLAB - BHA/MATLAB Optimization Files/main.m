@@ -29,8 +29,8 @@ totalExecutionTimer = tic;
 % false = Do not save files
 %% =========================
 system_id = 4;
-controller_type = 'PID';
-optimization_mode = 2;
+controller_type = 'PD';
+optimization_mode = 1;
 collect_results = true;
 
 %% =========================
@@ -54,7 +54,7 @@ wantedess       = 0.1;     % In percentage
 %% =========================
 nPop     = 50;
 MaxIt    = 100;
-sim_time = 0.8;
+sim_time = 2;
 
 %% =========================
 % Paths
