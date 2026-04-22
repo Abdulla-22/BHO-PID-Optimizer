@@ -29,7 +29,7 @@ totalExecutionTimer = tic;
 % false = Do not save files
 %% =========================
 system_id = 3;
-controller_type = 'PI';
+controller_type = 'PD';
 optimization_mode = 2;
 collect_results = true;
 
