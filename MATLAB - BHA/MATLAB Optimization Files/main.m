@@ -29,8 +29,8 @@ totalExecutionTimer = tic;
 % false = Do not save files
 %% =========================
 system_id = 3;
-controller_type = 'PID';
-optimization_mode = 1;
+controller_type = 'PI';
+optimization_mode = 2;
 collect_results = true;
 
 %% =========================
@@ -45,9 +45,9 @@ custom_tf.step_amp = 1;
 % User performance specifications
 % Used only in CONSTRAINED mode
 %% =========================
-wantedovershoot = 0.5;     % In percentage
+wantedovershoot = 0.05;     % In percentage
 wantedrisetime  = 0.01;    % In seconds
-wantedess       = 0.1;     % In percentage
+wantedess       = 0.4;     % In percentage
 
 %% =========================
 % Optimization settings
