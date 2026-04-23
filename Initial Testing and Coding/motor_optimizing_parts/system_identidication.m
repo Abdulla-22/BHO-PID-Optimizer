@@ -33,7 +33,7 @@ CPR_MOTOR_4X  = 64.0;
 GEAR_RATIO    = 131.25;
 RPM_AT_OUTPUT = true;
 
-SAMPLE_MS = 50;
+SAMPLE_MS = 10;
 TsTarget  = SAMPLE_MS/1000;
 
 PWM_MIN = 0;
@@ -42,7 +42,7 @@ PWM_MAX = 255;
 % ===== Step Test Settings =====
 CAPTURE_SEC = 20;      % total test duration
 STEP_TIME   = 1.00;    % time to apply the step (sec) after start
-PWM_STEP    = 170;     % step PWM magnitude (0->PWM_STEP)
+PWM_STEP    = 255;     % step PWM magnitude (0->PWM_STEP)
 forwardDir  = true;
 
 % RPM low-pass filter
@@ -225,8 +225,8 @@ disp("Stopped.");
 disp("Saved Excel: " + fileName);
 
 %% =========================================================
-% First-Order + Dead-Time Identification (Optimized)
-% Model: G(s) = K/(tau*s + 1) * e^{-L s}
+% First-Order Identification (NO DEAD TIME)
+% Model: G(s) = K / (tau*s + 1)
 %% =========================================================
 
 % Find actual step time from uLog (robust)
@@ -269,32 +269,28 @@ u_u = PWM_STEP * ones(size(t_u));
 % Initial guesses
 tailN = max(10, round(0.2*numel(y_u)));
 yss = mean(y_u(end-tailN+1:end), "omitnan");
-K0  = max(1e-6, yss / double(PWM_STEP));
+K0 = max(1e-6, yss / double(PWM_STEP));
 tau0 = max(0.1, t_end/3);
-L0  = 0.02;
 
-p0 = [log(K0); log(tau0); log(max(L0,1e-4))];
-cost = @(p) firstOrderCost(p, t_u, u_u, y_u);
+p0 = [log(K0); log(tau0)];
+cost = @(p) firstOrderNoDelayCost(p, t_u, u_u, y_u);
 
 opts = optimset('Display','iter','MaxIter',250,'TolX',1e-7,'TolFun',1e-7);
 pHat = fminsearch(cost, p0, opts);
 
 K   = exp(pHat(1));
 tau = exp(pHat(2));
-L   = exp(pHat(3));
 
 % Transfer function
 s = tf('s');
 G = K / (tau*s + 1);
-G.InputDelay = L;
 
 disp("=====================================");
-disp("Optimized First-Order Plant Transfer Function G(s):");
+disp("Optimized First-Order Plant Transfer Function G(s) (NO DELAY):");
 G
 disp("Estimated parameters (optimized):");
 fprintf("K   = %.6f (RPM/PWM)\n", K);
 fprintf("tau = %.6f s\n", tau);
-fprintf("L   = %.6f s (dead time)\n", L);
 fprintf("Step detected at t = %.6f s (from PWM log)\n", tStepActual);
 disp("=====================================");
 
@@ -302,25 +298,23 @@ disp("=====================================");
 y_model = lsim(G, u_u, t_u);
 
 % Compare plot
-figure('Name','First-Order Identification (Optimized)','NumberTitle','off');
+figure('Name','First-Order Identification (No Delay)','NumberTitle','off');
 grid on; hold on;
 plot(t_u, y_u, 'LineWidth', 1.5);
 plot(t_u, y_model, '--', 'LineWidth', 1.5);
 xlabel("Time after step (s)");
 ylabel("RPM (baseline removed)");
-title("Measured vs Optimized First-Order Model (Open-loop)");
+title("Measured vs Optimized First-Order Model (No Delay)");
 legend("Measured RPM","Model RPM","Location","best");
 
 %% ===================== Helpers =====================
 
-function J = firstOrderCost(p, t, u, y)
+function J = firstOrderNoDelayCost(p, t, u, y)
     K   = exp(p(1));
     tau = exp(p(2));
-    L   = exp(p(3));
 
     s = tf('s');
     G = K / (tau*s + 1);
-    G.InputDelay = L;
 
     try
         yhat = lsim(G, u, t);
