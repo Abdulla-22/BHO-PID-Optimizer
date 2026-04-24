@@ -31,7 +31,7 @@ totalExecutionTimer = tic;
 system_id = 4;
 controller_type = 'PID';
 optimization_mode = 1;
-collect_results = false;
+collect_results = true;
 
 %% =========================
 % Custom transfer function
@@ -39,7 +39,7 @@ collect_results = false;
 %% =========================
 custom_tf.num = [0.3334];
 custom_tf.den = [0.9616 1];
-custom_tf.step_amp = 50;
+custom_tf.step_amp = 30;
 
 %% =========================
 % User performance specifications
@@ -54,7 +54,7 @@ wantedess       = 0.1;     % In percentage
 %% =========================
 nPop     = 20;
 MaxIt    = 100;
-sim_time = 5;
+sim_time = 10;
 
 %% =========================
 % Paths
@@ -106,7 +106,7 @@ switch upper(controller_type)
 
     case 'PID'
         VarMin = [0 0 0];
-        VarMax = [1000 1000 1000];
+        VarMax = [20 10 5];
 
     otherwise
         error('Invalid controller_type. Use PI, PD, or PID.');
