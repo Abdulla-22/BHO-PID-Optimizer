@@ -3,509 +3,401 @@ clear;
 close all;
 
 %% =========================
-% Hardware
+% Arduino / Motor pins
 %% =========================
-COM   = "COM5";
+COM   = "COM5";       % Change this to your Arduino port
 BOARD = "Nano3";
 
-R_PWM = 'D9';
-L_PWM = 'D10';
-R_EN  = 'D8';
-L_EN  = 'D7';
+R_PWM = "D9";
+L_PWM = "D10";
+R_EN  = "D8";
+L_EN  = "D7";
 
-ENC_A = 'D2';
-ENC_B = 'D3';
+ENC_A = "D2";
+ENC_B = "D3";
 
-CPR_TOTAL = 64 * 131.25;
+%% =========================
+% Encoder / motor settings
+%% =========================
+CPR_MOTOR_4X = 64.0;
+GEAR_RATIO   = 131.25;
+CPR_TOTAL    = CPR_MOTOR_4X * GEAR_RATIO;
 
 %% =========================
 % Fixed PID values
 %% =========================
-kp = 8.465543539;
-ki = 4.902590596;
-kd = 0.032982879;
+Kp = 4.9066;
+Ki = 5.7438;
+Kd = 2.5421;
 
 %% =========================
 % Test settings
 %% =========================
 targetRPM = 50;
-testTime  = 5;
+testSec   = 5;
 Ts        = 0.05;
-
-pauseTime = 1.5;
-
-RPM_SAFETY_LIMIT = targetRPM * 2.5;
-
-%% =========================
-% Connect Arduino
-%% =========================
-fprintf("Connecting to Arduino on %s...\n", COM);
-
-a = arduino(COM, BOARD, "Libraries", "rotaryEncoder");
-enc = rotaryEncoder(a, ENC_A, ENC_B, round(CPR_TOTAL));
-
-configurePin(a, R_PWM, "PWM");
-configurePin(a, L_PWM, "PWM");
-configurePin(a, R_EN, "DigitalOutput");
-configurePin(a, L_EN, "DigitalOutput");
-
-stopMotor(a, R_PWM, L_PWM, R_EN, L_EN);
-
-%% =========================
-% Create real-time figure
-%% =========================
-fig = figure("Name", "Real-Time PID Alpha Tuning", "NumberTitle", "off");
-
-ax1 = subplot(2,1,1);
-hold(ax1, "on");
-grid(ax1, "on");
-rpmLine = plot(ax1, nan, nan, "LineWidth", 2);
-targetLine = plot(ax1, nan, nan, "--", "LineWidth", 2);
-xlabel(ax1, "Time [s]");
-ylabel(ax1, "RPM");
-title(ax1, "Motor Response");
-
-ax2 = subplot(2,1,2);
-hold(ax2, "on");
-grid(ax2, "on");
-pwmLine = plot(ax2, nan, nan, "LineWidth", 2);
-xlabel(ax2, "Time [s]");
-ylabel(ax2, "PWM");
-title(ax2, "PWM Signal");
-
-%% =========================
-% Stage 1: Coarse search
-%% =========================
-rpmList = [0.08 0.10 0.15 0.20 0.25 0.30];
-dList   = [0.05 0.10 0.20 0.35 0.50 0.70];
-
-results = [];
-
-fprintf("\n=== COARSE SEARCH ===\n");
-
-for i = 1:length(rpmList)
-    for j = 1:length(dList)
-
-        rpmAlpha = rpmList(i);
-        dAlpha   = dList(j);
-
-        fprintf("\nTesting rpmAlpha=%.4f | dAlpha=%.4f\n", rpmAlpha, dAlpha);
-
-        try
-            [t, rpm, pwm] = runTest( ...
-                a, enc, R_PWM, L_PWM, R_EN, L_EN, ...
-                kp, ki, kd, rpmAlpha, dAlpha, ...
-                targetRPM, testTime, Ts, CPR_TOTAL, RPM_SAFETY_LIMIT, ...
-                fig, ax1, ax2, rpmLine, targetLine, pwmLine);
-
-            score = calcScore(t, rpm, pwm, targetRPM);
-
-        catch ME
-            fprintf("Test failed: %s\n", ME.message);
-            score = 1e9;
-        end
-
-        fprintf("Score = %.6f\n", score);
-
-        results = [results; rpmAlpha dAlpha score];
-
-        stopMotor(a, R_PWM, L_PWM, R_EN, L_EN);
-        pause(pauseTime);
-    end
-end
-
-%% =========================
-% Pick best coarse result
-%% =========================
-[~, idx] = min(results(:,3));
-best = results(idx,:);
-
-bestRpmAlpha = best(1);
-bestDAlpha   = best(2);
-
-fprintf("\nBest coarse result:\n");
-fprintf("rpmAlpha = %.6f\n", bestRpmAlpha);
-fprintf("dAlpha   = %.6f\n", bestDAlpha);
-fprintf("score    = %.6f\n", best(3));
-
-%% =========================
-% Stage 2: Fine search
-%% =========================
-range = 0.05;
-
-rpmListFine = linspace(max(0.02, bestRpmAlpha - range), min(0.30, bestRpmAlpha + range), 5);
-dListFine   = linspace(max(0.02, bestDAlpha   - range), min(0.80, bestDAlpha   + range), 5);
-
-resultsFine = [];
-
-fprintf("\n=== FINE SEARCH ===\n");
-
-for i = 1:length(rpmListFine)
-    for j = 1:length(dListFine)
-
-        rpmAlpha = rpmListFine(i);
-        dAlpha   = dListFine(j);
-
-        fprintf("\nRefining rpmAlpha=%.6f | dAlpha=%.6f\n", rpmAlpha, dAlpha);
-
-        try
-            [t, rpm, pwm] = runTest( ...
-                a, enc, R_PWM, L_PWM, R_EN, L_EN, ...
-                kp, ki, kd, rpmAlpha, dAlpha, ...
-                targetRPM, testTime, Ts, CPR_TOTAL, RPM_SAFETY_LIMIT, ...
-                fig, ax1, ax2, rpmLine, targetLine, pwmLine);
-
-            score = calcScore(t, rpm, pwm, targetRPM);
-
-        catch ME
-            fprintf("Test failed: %s\n", ME.message);
-            score = 1e9;
-        end
-
-        fprintf("Score = %.6f\n", score);
-
-        resultsFine = [resultsFine; rpmAlpha dAlpha score];
-
-        stopMotor(a, R_PWM, L_PWM, R_EN, L_EN);
-        pause(pauseTime);
-    end
-end
-
-%% =========================
-% Final best
-%% =========================
-allResults = [results; resultsFine];
-
-[~, idx] = min(allResults(:,3));
-finalBest = allResults(idx,:);
-
-finalRpmAlpha = finalBest(1);
-finalDAlpha   = finalBest(2);
-finalScore    = finalBest(3);
-
-fprintf("\n==============================\n");
-fprintf("FINAL BEST RESULT\n");
-fprintf("==============================\n");
-fprintf("Kp       = %.9f\n", kp);
-fprintf("Ki       = %.9f\n", ki);
-fprintf("Kd       = %.9f\n", kd);
-fprintf("rpmAlpha = %.9f\n", finalRpmAlpha);
-fprintf("dAlpha   = %.9f\n", finalDAlpha);
-fprintf("score    = %.9f\n", finalScore);
-fprintf("==============================\n");
-
-%% =========================
-% Final run using best values
-%% =========================
-fprintf("\nRunning final test with best values...\n");
-
-[tFinal, rpmFinal, pwmFinal] = runTest( ...
-    a, enc, R_PWM, L_PWM, R_EN, L_EN, ...
-    kp, ki, kd, finalRpmAlpha, finalDAlpha, ...
-    targetRPM, testTime, Ts, CPR_TOTAL, RPM_SAFETY_LIMIT, ...
-    fig, ax1, ax2, rpmLine, targetLine, pwmLine);
-
-finalMetrics = calcMetrics(tFinal, rpmFinal, pwmFinal, targetRPM);
-
-fprintf("\nFinal Metrics:\n");
-fprintf("Rise Time          = %.4f s\n", finalMetrics.RiseTime);
-fprintf("Overshoot          = %.4f %%\n", finalMetrics.Overshoot);
-fprintf("Settling Time      = %.4f s\n", finalMetrics.SettlingTime);
-fprintf("Steady-State Error = %.4f\n", finalMetrics.SteadyStateError);
-fprintf("IAE                = %.6f\n", finalMetrics.IAE);
-fprintf("Final Score        = %.6f\n", finalMetrics.Score);
-
-%% =========================
-% Save results
-%% =========================
-resultsTable = array2table(allResults, ...
-    "VariableNames", ["rpmAlpha", "dAlpha", "Score"]);
-
-resultsTable = sortrows(resultsTable, "Score", "ascend");
-
-bestTable = table( ...
-    kp, ki, kd, finalRpmAlpha, finalDAlpha, finalScore, ...
-    finalMetrics.RiseTime, finalMetrics.Overshoot, ...
-    finalMetrics.SettlingTime, finalMetrics.SteadyStateError, ...
-    finalMetrics.IAE, finalMetrics.Score, ...
-    "VariableNames", ["Kp", "Ki", "Kd", "Best_rpmAlpha", "Best_dAlpha", ...
-    "OptimizationScore", "RiseTime", "OvershootPercent", ...
-    "SettlingTime", "SteadyStateError", "IAE", "FinalScore"]);
-
-writetable(resultsTable, "alpha_all_test_results.csv");
-writetable(bestTable, "alpha_best_result.csv");
-
-fprintf("\nSaved files:\n");
-fprintf("alpha_all_test_results.csv\n");
-fprintf("alpha_best_result.csv\n");
-
-%% =========================
-% Stop motor
-%% =========================
-stopMotor(a, R_PWM, L_PWM, R_EN, L_EN);
-
-%% ========================================================================
-% Local functions
-%% ========================================================================
-
-function [tLog, rpmLog, pwmLog] = runTest( ...
-    a, enc, R_PWM, L_PWM, R_EN, L_EN, ...
-    kp, ki, kd, rpmAlpha, dAlpha, ...
-    targetRPM, testTime, Ts, CPR_TOTAL, RPM_SAFETY_LIMIT, ...
-    fig, ax1, ax2, rpmLine, targetLine, pwmLine)
 
 PWM_MIN = 0;
 PWM_MAX = 255;
 
 I_LIMIT = 200;
 
+SOFTSTART_SEC = 0.4;
+SOFTSTART_PWM = 50;
+
 pwmSlewUp   = 200;
 pwmSlewDown = 400;
 
-softStartSec = 0.4;
-softStartPWM = 50;
+%% =========================
+% Alpha search range
+%% =========================
+rpmAlpha_range = 0.05:0.025:0.30;
+dAlpha_range   = 0.02:0.02:0.20;
 
-updatePlotEvery = 0.20;
+%% =========================
+% Connect Arduino
+%% =========================
+fprintf("Connecting to Arduino...\n");
+
+a = arduino(COM, BOARD, "Libraries", "rotaryEncoder");
+
+configurePin(a, R_PWM, "PWM");
+configurePin(a, L_PWM, "PWM");
+configurePin(a, R_EN,  "DigitalOutput");
+configurePin(a, L_EN,  "DigitalOutput");
 
 writeDigitalPin(a, R_EN, 1);
 writeDigitalPin(a, L_EN, 1);
 
-resetCount(enc);
-lastCount = readCount(enc);
+enc = rotaryEncoder(a, ENC_A, ENC_B, round(CPR_TOTAL));
 
-integral = 0;
-prevErr = 0;
-rpmFilt = 0;
-dFilt = 0;
-lastPWM = 0;
+applyPWM(a, R_PWM, L_PWM, R_EN, L_EN, 0, true);
+pause(1);
 
-firstSample = true;
+%% =========================
+% Results table
+%% =========================
+Results = table([], [], [], [], [], [], [], ...
+    'VariableNames', {'rpmAlpha','dAlpha','Cost','IAE','Overshoot','Ess','RiseTime'});
 
-maxSamples = ceil(testTime / Ts) + 10;
+bestCost = inf;
+bestRPMAlpha = NaN;
+bestDAlpha = NaN;
+bestData = [];
 
-tLog   = nan(maxSamples, 1);
-rpmLog = nan(maxSamples, 1);
-pwmLog = nan(maxSamples, 1);
+testNumber = 0;
+totalTests = numel(rpmAlpha_range) * numel(dAlpha_range);
 
-set(rpmLine, "XData", nan, "YData", nan);
-set(targetLine, "XData", nan, "YData", nan);
-set(pwmLine, "XData", nan, "YData", nan);
+%% =========================
+% Main tuning loop
+%% =========================
+try
+    for r = 1:numel(rpmAlpha_range)
+        for d = 1:numel(dAlpha_range)
 
-title(ax1, sprintf("Response | rpmAlpha = %.4f | dAlpha = %.4f", rpmAlpha, dAlpha));
-title(ax2, "PWM Signal");
+            testNumber = testNumber + 1;
 
-ylim(ax1, [0 max(targetRPM * 1.8, 10)]);
-ylim(ax2, [0 255]);
-xlim(ax1, [0 testTime]);
-xlim(ax2, [0 testTime]);
+            rpmAlpha = rpmAlpha_range(r);
+            dAlpha   = dAlpha_range(d);
 
-drawnow;
+            fprintf("\nTest %d/%d | rpmAlpha = %.4f | dAlpha = %.4f\n", ...
+                testNumber, totalTests, rpmAlpha, dAlpha);
 
-k = 0;
-tStart = tic;
-tPrev = toc(tStart);
-lastPlotUpdate = 0;
+            applyPWM(a, R_PWM, L_PWM, R_EN, L_EN, 0, true);
+            pause(1.0);
 
-while true
+            [cost, metrics, data] = runAlphaTest( ...
+                a, enc, ...
+                R_PWM, L_PWM, R_EN, L_EN, ...
+                targetRPM, testSec, Ts, ...
+                CPR_TOTAL, ...
+                Kp, Ki, Kd, ...
+                rpmAlpha, dAlpha, ...
+                I_LIMIT, ...
+                SOFTSTART_SEC, SOFTSTART_PWM, ...
+                PWM_MIN, PWM_MAX, ...
+                pwmSlewUp, pwmSlewDown);
 
-    if ~isvalid(fig)
-        error("Figure closed. Test stopped.");
-    end
+            Results = [Results; table( ...
+                rpmAlpha, dAlpha, cost, metrics.IAE, metrics.Overshoot, metrics.Ess, metrics.RiseTime, ...
+                'VariableNames', {'rpmAlpha','dAlpha','Cost','IAE','Overshoot','Ess','RiseTime'})];
 
-    tNow = toc(tStart);
+            fprintf("Cost = %.6f | OS = %.2f %% | Ess = %.4f | RT = %.3f s\n", ...
+                cost, metrics.Overshoot, metrics.Ess, metrics.RiseTime);
 
-    if tNow >= testTime
-        break;
-    end
+            if cost < bestCost
+                bestCost = cost;
+                bestRPMAlpha = rpmAlpha;
+                bestDAlpha = dAlpha;
+                bestData = data;
 
-    dt = tNow - tPrev;
-
-    if dt < Ts
-        pause(0.001);
-        continue;
-    end
-
-    tPrev = tNow;
-
-    count = readCount(enc);
-    delta = count - lastCount;
-    lastCount = count;
-
-    rpmRaw = (double(delta) * 60.0) / (double(CPR_TOTAL) * dt);
-    rpmRaw = abs(rpmRaw);
-
-    rpmFilt = rpmAlpha * rpmRaw + (1 - rpmAlpha) * rpmFilt;
-
-    if firstSample
-        rpmFilt = rpmRaw;
-        prevErr = targetRPM - rpmFilt;
-        dFilt = 0;
-        integral = 0;
-        firstSample = false;
-    end
-
-    if rpmFilt > RPM_SAFETY_LIMIT
-        stopMotor(a, R_PWM, L_PWM, R_EN, L_EN);
-        error("Safety stop: RPM exceeded %.2f RPM.", RPM_SAFETY_LIMIT);
-    end
-
-    if tNow < softStartSec
-        pwmCmd = softStartPWM;
-        err = targetRPM - rpmFilt;
-    else
-        err = targetRPM - rpmFilt;
-
-        integral = integral + err * dt;
-        integral = max(-I_LIMIT, min(I_LIMIT, integral));
-
-        d = (err - prevErr) / dt;
-        dFilt = dAlpha * d + (1 - dAlpha) * dFilt;
-
-        u = kp * err + ki * integral + kd * dFilt;
-        pwmCmd = round(u);
-
-        if pwmCmd > PWM_MAX
-            pwmCmd = PWM_MAX;
-            if err > 0
-                integral = integral - err * dt;
-            end
-        elseif pwmCmd < PWM_MIN
-            pwmCmd = PWM_MIN;
-            if err < 0
-                integral = integral - err * dt;
+                fprintf(">>> New best found\n");
             end
         end
-
-        prevErr = err;
     end
 
-    stepUp = pwmSlewUp * dt;
-    stepDown = pwmSlewDown * dt;
+catch ME
+    applyPWM(a, R_PWM, L_PWM, R_EN, L_EN, 0, true);
+    writeDigitalPin(a, R_EN, 0);
+    writeDigitalPin(a, L_EN, 0);
+    rethrow(ME);
+end
 
-    if pwmCmd > lastPWM
-        pwmCmd = min(pwmCmd, lastPWM + stepUp);
+%% =========================
+% Stop motor
+%% =========================
+applyPWM(a, R_PWM, L_PWM, R_EN, L_EN, 0, true);
+writeDigitalPin(a, R_EN, 0);
+writeDigitalPin(a, L_EN, 0);
+
+%% =========================
+% Show best result
+%% =========================
+fprintf("\n================ BEST RESULT ================\n");
+fprintf("Best rpmAlpha = %.6f\n", bestRPMAlpha);
+fprintf("Best dAlpha   = %.6f\n", bestDAlpha);
+fprintf("Best Cost     = %.6f\n", bestCost);
+
+disp(sortrows(Results, "Cost"));
+
+%% =========================
+% Save results
+%% =========================
+timeStamp = char(datetime("now", "Format", "yyyy-MM-dd_HH-mm-ss"));
+csvName = "Alpha_Tuning_Results_" + timeStamp + ".csv";
+writetable(Results, csvName);
+
+fprintf("\nResults saved to: %s\n", csvName);
+
+%% =========================
+% Plot best response
+%% =========================
+if ~isempty(bestData)
+    figure;
+    hold on;
+    grid on;
+
+    plot(bestData.t, bestData.target, "LineWidth", 1.5);
+    plot(bestData.t, bestData.rpm, "LineWidth", 1.5);
+    plot(bestData.t, bestData.pwm, "LineWidth", 1.5);
+
+    xlabel("Time (s)");
+    ylabel("RPM / PWM");
+    title("Best Hardware Motor Response");
+    legend("Target RPM", "Actual RPM", "PWM", "Location", "best");
+end
+
+%% ============================================================
+% Local functions
+%% ============================================================
+
+function [J, metrics, data] = runAlphaTest( ...
+    a, enc, ...
+    R_PWM, L_PWM, R_EN, L_EN, ...
+    targetRPM, testSec, Ts, ...
+    CPR_TOTAL, ...
+    Kp, Ki, Kd, ...
+    rpmAlpha, dAlpha, ...
+    I_LIMIT, ...
+    SOFTSTART_SEC, SOFTSTART_PWM, ...
+    PWM_MIN, PWM_MAX, ...
+    pwmSlewUp, pwmSlewDown)
+
+    tData = [];
+    rpmData = [];
+    pwmData = [];
+    errData = [];
+
+    integral = 0;
+    prevError = 0;
+    dFiltered = 0;
+    rpmFilt = 0;
+    lastPWM = 0;
+    firstSample = true;
+
+    lastCount = readCount(enc);
+
+    tStart = tic;
+    tPrev = 0;
+
+    while toc(tStart) < testSec
+
+        tNow = toc(tStart);
+        dt = tNow - tPrev;
+
+        if dt < Ts
+            pause(Ts / 5);
+            continue;
+        end
+
+        if dt <= 0 || ~isfinite(dt)
+            continue;
+        end
+
+        tPrev = tNow;
+
+        countNow = readCount(enc);
+        delta = countNow - lastCount;
+        lastCount = countNow;
+
+        rpmRaw = abs((double(delta) * 60.0) / (double(CPR_TOTAL) * dt));
+
+        if ~isfinite(rpmRaw)
+            J = 1e8;
+            metrics = emptyMetrics();
+            data = [];
+            return;
+        end
+
+        rpmFilt = rpmAlpha * rpmRaw + (1 - rpmAlpha) * rpmFilt;
+
+        if firstSample
+            rpmFilt = rpmRaw;
+            prevError = targetRPM - rpmFilt;
+            dFiltered = 0;
+            integral = 0;
+            firstSample = false;
+        end
+
+        if tNow < SOFTSTART_SEC
+            pwmCmd = SOFTSTART_PWM;
+            errNow = targetRPM - rpmFilt;
+        else
+            errNow = targetRPM - rpmFilt;
+
+            integral = integral + errNow * dt;
+            integral = max(-I_LIMIT, min(I_LIMIT, integral));
+
+            dRaw = (errNow - prevError) / dt;
+            dFiltered = dAlpha * dRaw + (1 - dAlpha) * dFiltered;
+
+            u = Kp * errNow + Ki * integral + Kd * dFiltered;
+            pwmCmd = round(u);
+
+            if pwmCmd > PWM_MAX
+                pwmCmd = PWM_MAX;
+                if errNow > 0
+                    integral = integral - errNow * dt;
+                end
+            elseif pwmCmd < PWM_MIN
+                pwmCmd = PWM_MIN;
+                if errNow < 0
+                    integral = integral - errNow * dt;
+                end
+            end
+
+            prevError = errNow;
+        end
+
+        pwmCmd = limitPwmSlewLocal(pwmCmd, lastPWM, dt, PWM_MIN, PWM_MAX, pwmSlewUp, pwmSlewDown);
+        lastPWM = pwmCmd;
+
+        applyPWM(a, R_PWM, L_PWM, R_EN, L_EN, pwmCmd, true);
+
+        tData(end+1,1) = tNow;
+        rpmData(end+1,1) = rpmFilt;
+        pwmData(end+1,1) = pwmCmd;
+        errData(end+1,1) = errNow;
+    end
+
+    applyPWM(a, R_PWM, L_PWM, R_EN, L_EN, 0, true);
+    pause(0.3);
+
+    if numel(tData) < 5 || any(~isfinite(rpmData))
+        J = 1e8;
+        metrics = emptyMetrics();
+        data = [];
+        return;
+    end
+
+    absError = abs(targetRPM - rpmData);
+
+    IAE = trapz(tData, absError);
+    IAE_norm = IAE / max(targetRPM * testSec, eps);
+
+    overshoot = max(0, (max(rpmData) - targetRPM) / max(targetRPM, eps)) * 100;
+    ess = abs(targetRPM - rpmData(end)) / max(targetRPM, eps);
+
+    pwmPenalty = mean(pwmData) / 255;
+
+    idx10 = find(rpmData >= 0.10 * targetRPM, 1, 'first');
+    idx90 = find(rpmData >= 0.90 * targetRPM, 1, 'first');
+
+    if isempty(idx10) || isempty(idx90) || idx90 <= idx10
+        riseTime = testSec;
     else
-        pwmCmd = max(pwmCmd, lastPWM - stepDown);
+        riseTime = tData(idx90) - tData(idx10);
     end
 
-    pwmCmd = round(max(PWM_MIN, min(PWM_MAX, pwmCmd)));
-    lastPWM = pwmCmd;
+    riseNorm = riseTime / max(testSec, eps);
 
-    duty = pwmCmd / 255;
+    J = (0.45 * IAE_norm) + ...
+        (0.20 * ess) + ...
+        (0.20 * overshoot / 100) + ...
+        (0.10 * riseNorm) + ...
+        (0.05 * pwmPenalty);
+
+    if max(rpmData) > targetRPM * 2.0
+        J = J * 10;
+    end
+
+    if rpmData(end) < targetRPM * 0.10
+        J = J * 5;
+    end
+
+    metrics.IAE = IAE;
+    metrics.Overshoot = overshoot;
+    metrics.Ess = ess;
+    metrics.RiseTime = riseTime;
+
+    data.t = tData;
+    data.rpm = rpmData;
+    data.pwm = pwmData;
+    data.err = errData;
+    data.target = targetRPM * ones(size(tData));
+end
+
+function applyPWM(a, R_PWM, L_PWM, R_EN, L_EN, pwm, forwardDir)
+    pwm = max(0, min(255, pwm));
+    duty = pwm / 255;
 
     writeDigitalPin(a, R_EN, 1);
     writeDigitalPin(a, L_EN, 1);
 
-    writePWMDutyCycle(a, R_PWM, duty);
-    writePWMDutyCycle(a, L_PWM, 0);
+    if pwm == 0
+        writePWMDutyCycle(a, R_PWM, 0);
+        writePWMDutyCycle(a, L_PWM, 0);
+        return;
+    end
 
-    k = k + 1;
-
-    tLog(k)   = tNow;
-    rpmLog(k) = rpmFilt;
-    pwmLog(k) = pwmCmd;
-
-    if (tNow - lastPlotUpdate) >= updatePlotEvery
-        validIdx = ~isnan(tLog);
-
-        set(rpmLine, "XData", tLog(validIdx), "YData", rpmLog(validIdx));
-        set(targetLine, "XData", tLog(validIdx), "YData", targetRPM * ones(sum(validIdx), 1));
-        set(pwmLine, "XData", tLog(validIdx), "YData", pwmLog(validIdx));
-
-        drawnow limitrate;
-
-        lastPlotUpdate = tNow;
+    if forwardDir
+        writePWMDutyCycle(a, R_PWM, duty);
+        writePWMDutyCycle(a, L_PWM, 0);
+    else
+        writePWMDutyCycle(a, R_PWM, 0);
+        writePWMDutyCycle(a, L_PWM, duty);
     end
 end
 
-stopMotor(a, R_PWM, L_PWM, R_EN, L_EN);
+function pwmOut = limitPwmSlewLocal(pwmIn, lastPWMValue, dt, PWM_MIN, PWM_MAX, pwmSlewUp, pwmSlewDown)
+    pwmIn = max(PWM_MIN, min(PWM_MAX, pwmIn));
+    lastPWMValue = max(PWM_MIN, min(PWM_MAX, lastPWMValue));
 
-validIdx = ~isnan(tLog);
+    stepUp = pwmSlewUp * dt;
+    stepDown = pwmSlewDown * dt;
 
-tLog   = tLog(validIdx);
-rpmLog = rpmLog(validIdx);
-pwmLog = pwmLog(validIdx);
-
-set(rpmLine, "XData", tLog, "YData", rpmLog);
-set(targetLine, "XData", tLog, "YData", targetRPM * ones(size(tLog)));
-set(pwmLine, "XData", tLog, "YData", pwmLog);
-drawnow;
-
-end
-
-function score = calcScore(t, rpm, pwm, targetRPM)
-
-metrics = calcMetrics(t, rpm, pwm, targetRPM);
-score = metrics.Score;
-
-end
-
-function metrics = calcMetrics(t, rpm, pwm, targetRPM)
-
-if isempty(t) || isempty(rpm) || numel(t) < 5
-    metrics.RiseTime = inf;
-    metrics.Overshoot = inf;
-    metrics.SettlingTime = inf;
-    metrics.SteadyStateError = inf;
-    metrics.IAE = inf;
-    metrics.Score = 1e9;
-    return;
-end
-
-err = targetRPM - rpm;
-
-IAE = trapz(t, abs(err)) / max(targetRPM * t(end), eps);
-
-maxRPM = max(rpm);
-overshoot = max(0, ((maxRPM - targetRPM) / max(targetRPM, eps)) * 100);
-
-idxRise = find(rpm >= 0.9 * targetRPM, 1, "first");
-
-if isempty(idxRise)
-    riseTime = t(end);
-else
-    riseTime = t(idxRise);
-end
-
-band = 0.05 * targetRPM;
-settlingTime = t(end);
-
-for i = 1:numel(t)
-    if all(abs(rpm(i:end) - targetRPM) <= band)
-        settlingTime = t(i);
-        break;
+    if pwmIn > lastPWMValue
+        pwmOut = min(pwmIn, lastPWMValue + stepUp);
+    else
+        pwmOut = max(pwmIn, lastPWMValue - stepDown);
     end
+
+    pwmOut = round(pwmOut);
 end
 
-lastN = max(3, round(0.15 * numel(rpm)));
-steadyStateError = abs(targetRPM - mean(rpm(end-lastN+1:end))) / max(targetRPM, eps);
-
-pwmSaturationRatio = mean(pwm >= 250);
-
-metrics.RiseTime = riseTime;
-metrics.Overshoot = overshoot;
-metrics.SettlingTime = settlingTime;
-metrics.SteadyStateError = steadyStateError;
-metrics.IAE = IAE;
-
-metrics.Score = ...
-    0.40 * IAE + ...
-    0.20 * (overshoot / 100) + ...
-    0.15 * (riseTime / max(t(end), eps)) + ...
-    0.15 * (settlingTime / max(t(end), eps)) + ...
-    0.10 * steadyStateError + ...
-    0.20 * pwmSaturationRatio;
-
-end
-
-function stopMotor(a, R_PWM, L_PWM, R_EN, L_EN)
-
-try
-    writePWMDutyCycle(a, R_PWM, 0);
-    writePWMDutyCycle(a, L_PWM, 0);
-    writeDigitalPin(a, R_EN, 0);
-    writeDigitalPin(a, L_EN, 0);
-catch
-end
-
+function metrics = emptyMetrics()
+    metrics.IAE = NaN;
+    metrics.Overshoot = NaN;
+    metrics.Ess = NaN;
+    metrics.RiseTime = NaN;
 end
