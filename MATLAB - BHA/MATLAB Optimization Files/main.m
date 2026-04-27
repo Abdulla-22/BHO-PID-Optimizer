@@ -10,10 +10,10 @@ totalExecutionTimer = tic;
 %% =========================
 % User selections
 %% =========================
-system_id = 3;
-controller_type = 'PI';
+system_id = 1;
+controller_type = 'PD';
 optimization_mode = 1;
-collect_results = false;
+collect_results = true;
 
 %% =========================
 % Custom transfer function
@@ -34,7 +34,7 @@ wantedess       = 0.1;
 %% =========================
 nPop     = 100;
 MaxIt    = 100;
-sim_time = 5;
+sim_time = 20;
 
 %% =========================
 % Parameters validation
