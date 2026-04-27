@@ -1,4 +1,4 @@
-function init_ballandbeam()
+function plant = init_ballandbeam()
 
 % Parameters
 m = 0.111;
@@ -10,13 +10,15 @@ J = 9.99e-6;
 
 step_amp = 10;
 
-K = (m*g*d)/(L*(J/R^2+m));   %simplifies input
+K = (m * g * d) / (L * (J / R^2 + m));
 
 num = [K];
 den = [1 0 0];
 
-assignin('base','step_amp',step_amp);
-assignin('base','num',num);
-assignin('base','den',den);
+plant.name = "BallandBeam";
+plant.num = num;
+plant.den = den;
+plant.step_amp = step_amp;
+plant.G = tf(num, den);
 
 end

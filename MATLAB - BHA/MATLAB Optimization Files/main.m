@@ -9,52 +9,47 @@ totalExecutionTimer = tic;
 
 %% =========================
 % User selections
-% system_id:
-% 1 = Ball & Beam
-% 2 = Cruise Control
-% 3 = Motor Speed
-% 4 = Custom Transfer Function
-%
-% controller_type:
-% 'PI'  = Proportional Integral
-% 'PD'  = Proportional Derivative
-% 'PID' = Proportional Integral Derivative
-%
-% optimization_mode:
-% 1 = BEST
-% 2 = CONSTRAINED
-%
-% collect_results:
-% true  = Save command window log, BHO iteration history, and plots
-% false = Do not save files
 %% =========================
-system_id = 4;
-controller_type = 'PID';
+system_id = 3;
+controller_type = 'PI';
 optimization_mode = 1;
-collect_results = true;
+collect_results = false;
 
 %% =========================
 % Custom transfer function
-% Used only when system_id = 4
 %% =========================
-custom_tf.num = [0.3334];
-custom_tf.den = [0.9616 1];
+custom_tf.num = [1];
+custom_tf.den = [5 1];
 custom_tf.step_amp = 30;
 
 %% =========================
 % User performance specifications
-% Used only in CONSTRAINED mode
 %% =========================
-wantedovershoot = 0.5;     % In percentage
-wantedrisetime  = 0.01;    % In seconds
-wantedess       = 0.1;     % In percentage
+wantedovershoot = 0.5;
+wantedrisetime  = 0.01;
+wantedess       = 0.1;
 
 %% =========================
 % Optimization settings
 %% =========================
-nPop     = 20;
+nPop     = 100;
 MaxIt    = 100;
-sim_time = 10;
+sim_time = 5;
+
+%% =========================
+% Parameters validation
+%% =========================
+if nPop <= 0
+    error('nPop must be greater than 0.');
+end
+
+if MaxIt <= 0
+    error('MaxIt must be greater than 0.');
+end
+
+if sim_time <= 0
+    error('sim_time must be greater than 0.');
+end
 
 %% =========================
 % Paths
@@ -106,112 +101,31 @@ switch upper(controller_type)
 
     case 'PID'
         VarMin = [0 0 0];
-        VarMax = [20 10 5];
+        VarMax = [1000 1000 1000];
 
     otherwise
         error('Invalid controller_type. Use PI, PD, or PID.');
 end
 
 %% =========================
-% Select system, model name, initialization, and cost function
+% Select system and initialization
 %% =========================
-isCustomSystem = false;
+switch system_id
+    case 1
+        initFcn = @init_ballandbeam;
 
-switch upper(controller_type)
+    case 2
+        initFcn = @init_cruise;
 
-    case 'PI'
-        switch system_id
-            case 1
-                model      = "BallandBeamPI";
-                initFcn    = @init_ballandbeam;
-                costFcnRaw = @(K) cost_ballandbeam(K, model);
+    case 3
+        initFcn = @init_motor;
 
-            case 2
-                model      = "CruiseControlPI";
-                initFcn    = @init_cruise;
-                costFcnRaw = @(K) cost_cruise(K, model);
-
-            case 3
-                model      = "MotorSpeedPI";
-                initFcn    = @init_motor;
-                costFcnRaw = @(K) cost_motor(K, model);
-
-            case 4
-                model      = "CustomSystemPI";
-                initFcn    = @() assignCustomTFToBase(custom_tf);
-                costFcnRaw = @(K) cost_custom(K, model);
-                isCustomSystem = true;
-
-            otherwise
-                error('Invalid system_id. Use 1, 2, 3, or 4.');
-        end
-
-    case 'PD'
-        switch system_id
-            case 1
-                model      = "BallandBeamPD";
-                initFcn    = @init_ballandbeam;
-                costFcnRaw = @(K) cost_ballandbeam(K, model);
-
-            case 2
-                model      = "CruiseControlPD";
-                initFcn    = @init_cruise;
-                costFcnRaw = @(K) cost_cruise(K, model);
-
-            case 3
-                model      = "MotorSpeedPD";
-                initFcn    = @init_motor;
-                costFcnRaw = @(K) cost_motor(K, model);
-
-            case 4
-                model      = "CustomSystemPD";
-                initFcn    = @() assignCustomTFToBase(custom_tf);
-                costFcnRaw = @(K) cost_custom(K, model);
-                isCustomSystem = true;
-
-            otherwise
-                error('Invalid system_id. Use 1, 2, 3, or 4.');
-        end
-
-    case 'PID'
-        switch system_id
-            case 1
-                model      = "BallandBeamPID";
-                initFcn    = @init_ballandbeam;
-                costFcnRaw = @(K) cost_ballandbeam(K, model);
-
-            case 2
-                model      = "CruiseControlPID";
-                initFcn    = @init_cruise;
-                costFcnRaw = @(K) cost_cruise(K, model);
-
-            case 3
-                model      = "MotorSpeedPID";
-                initFcn    = @init_motor;
-                costFcnRaw = @(K) cost_motor(K, model);
-
-            case 4
-                model      = "CustomSystemPID";
-                initFcn    = @() assignCustomTFToBase(custom_tf);
-                costFcnRaw = @(K) cost_custom(K, model);
-                isCustomSystem = true;
-
-            otherwise
-                error('Invalid system_id. Use 1, 2, 3, or 4.');
-        end
+    case 4
+        initFcn = @() assignCustomTFToBase(custom_tf);
 
     otherwise
-        error('Invalid controller_type. Use PI, PD, or PID.');
+        error('Invalid system_id. Use 1, 2, 3, or 4.');
 end
-
-%% =========================
-% Build full model folder path
-%% =========================
-modelFolder = fullfile(mainFolder, 'Simulink Models', upper(controller_type));
-if ~isfolder(modelFolder)
-    error('Model folder not found: %s', modelFolder);
-end
-addpath(genpath(modelFolder));
 
 %% =========================
 % Prepare results saving
@@ -255,7 +169,7 @@ try
     %% =========================
     % Run initialization once
     %% =========================
-    initFcn();
+    initOutput = initFcn();
 
     %% =========================
     % Assign settings to base workspace
@@ -266,9 +180,15 @@ try
     assignin('base', 'wantedrisetime', wantedrisetime);
     assignin('base', 'wantedess', wantedess);
 
-    if ~evalin('base', 'exist(''ref'', ''var'')')
-        assignin('base', 'ref', 1);
-    end
+    %% =========================
+    % Build transfer function plant
+    %% =========================
+    plant = getPlantFromInitOrBase(initOutput);
+
+    assignin('base', 'num', plant.num);
+    assignin('base', 'den', plant.den);
+    assignin('base', 'step_amp', plant.step_amp);
+    assignin('base', 'ref', plant.step_amp);
 
     %% =========================
     % Reset stop flag
@@ -276,32 +196,32 @@ try
     setappdata(0, 'BHO_Stop', false);
 
     %% =========================
-    % Clean old generated files before loading model
+    % Cost functions
     %% =========================
-    bdclose('all');
-    cleanSimulinkGeneratedFiles(mainFolder);
 
-    %% =========================
-    % Load Simulink model
-    %% =========================
-    modelPath = fullfile(modelFolder, model + ".slx");
-    if ~isfile(modelPath)
-        error('Model file not found: %s', modelPath);
+    % Select cost function based on system
+    switch system_id
+        case 1
+            costFcnHandle = @cost_ballandbeam;
+        case 2
+            costFcnHandle = @cost_cruise;
+        case 3
+            costFcnHandle = @cost_motor;
+        case 4
+            costFcnHandle = @cost_custom;
+        otherwise
+            error('Invalid system_id.');
     end
 
-    load_system(modelPath);
-
-    %% =========================
-    % Speed-up settings
-    %% =========================
-    set_param(model, 'SimulationMode', 'accelerator');
-    set_param(model, 'FastRestart', 'on');
-
-    %% =========================
-    % Wrap cost function based on controller type
-    %% =========================
-    costFcn = @(Kopt) controllerCostWrapper(Kopt, controller_type, costFcnRaw);
-
+    % Wrap cost function
+    costFcn = @(Kopt) costFcnHandle( ...
+        expandControllerGains(Kopt, controller_type), ...
+        plant, ...
+        sim_time, ...
+        optimization_mode, ...
+        wantedovershoot, ...
+        wantedrisetime, ...
+        wantedess);
     %% =========================
     % Always run BHO and ZN
     %% =========================
@@ -318,7 +238,7 @@ try
 
             case 'BHO'
                 [bestKopt, bhoHistory] = BlackHoleAlgorithm( ...
-                    costFcn, nPop, MaxIt, VarMin, VarMax, controller_type, model);
+                    costFcn, nPop, MaxIt, VarMin, VarMax, controller_type);
 
                 if isempty(bestKopt)
                     error('BHO did not return a valid solution.');
@@ -327,11 +247,7 @@ try
                 bestK = expandControllerGains(bestKopt, controller_type);
 
             case 'ZN'
-                if isCustomSystem
-                    [Ku, Tu] = estimateUltimateGainCustom(model, custom_tf, sim_time);
-                else
-                    [Ku, Tu] = estimateUltimateGain(model);
-                end
+                [Ku, Tu] = estimateUltimateGain(plant, sim_time);
 
                 if isnan(Ku) || isnan(Tu) || isinf(Ku) || isinf(Tu)
                     warning('ZN tuning skipped because Ku/Tu could not be estimated.');
@@ -346,7 +262,7 @@ try
                 end
 
             otherwise
-                error('Unknown tuning method');
+                error('Unknown tuning method.');
         end
 
         disp(['=== BEST ' upper(controller_type) ' GAINS (' method ') ===']);
@@ -356,22 +272,7 @@ try
         assignin('base', 'ki', bestK(2));
         assignin('base', 'kd', bestK(3));
 
-        if isCustomSystem
-            assignCustomTFToBase(custom_tf);
-        end
-
-        simOut = sim(model, 'StopTime', num2str(sim_time), 'CaptureErrors', 'on');
-
-        if ~isempty(simOut.ErrorMessage)
-            error('Simulation error in %s method: %s', method, simOut.ErrorMessage);
-        end
-
-        resp = simOut.OutputResponse;
-        t = squeeze(resp.Time);
-        y = squeeze(resp.Data);
-
-        t = t(:);
-        y = y(:);
+        [t, y] = simulateFeedbackResponse(bestK, controller_type, plant, sim_time);
 
         if isempty(t) || isempty(y)
             error('OutputResponse is empty in %s method.', method);
@@ -382,11 +283,10 @@ try
         end
 
         if numel(t) < 2
-            error(['OutputResponse in ' method ' contains less than 2 samples. ', ...
-                   'Check the output logging settings in the Simulink model.']);
+            error('OutputResponse in %s method contains less than 2 samples.', method);
         end
 
-        ref = getReferenceFromBase();
+        ref = plant.step_amp;
 
         try
             info = stepinfo(y, t, ref, 'SettlingTimeThreshold', 0.02);
@@ -409,16 +309,11 @@ try
         validMethods{end + 1} = method; %#ok<AGROW>
     end
 
-    %% =========================
-    % Turn Fast Restart off after finishing
-    %% =========================
-    set_param(model, 'FastRestart', 'off');
-
     if ~isfield(results, 'BHO')
         error('BHO result is missing. Plotting cannot continue.');
     end
 
-    ref = getReferenceFromBase();
+    ref = plant.step_amp;
 
     %% =========================
     % Figure 1: Input + BHO Output
@@ -654,8 +549,6 @@ try
     % Display total execution time
     %% =========================
     totalExecutionTimeSec = toc(totalExecutionTimer);
-    totalExecutionTimeMin = totalExecutionTimeSec / 60;
-    totalExecutionTimeHr  = totalExecutionTimeSec / 3600;
 
     hoursPart   = floor(totalExecutionTimeSec / 3600);
     minutesPart = floor(mod(totalExecutionTimeSec, 3600) / 60);
@@ -668,27 +561,16 @@ try
     fprintf('=============================================\n');
 
 catch ME
-    try
-        if bdIsLoaded(model)
-            set_param(model, 'FastRestart', 'off');
-        end
-    catch
-    end
-
     totalExecutionTimeSec = toc(totalExecutionTimer);
-    totalExecutionTimeMin = totalExecutionTimeSec / 60;
-    totalExecutionTimeHr  = totalExecutionTimeSec / 3600;
 
     hoursPart   = floor(totalExecutionTimeSec / 3600);
     minutesPart = floor(mod(totalExecutionTimeSec, 3600) / 60);
     secondsPart = mod(totalExecutionTimeSec, 60);
 
     fprintf('\n=============================================\n');
-    fprintf('Execution stopped بسبب خطأ.\n');
+    fprintf('Execution stopped because of an error.\n');
     fprintf('Elapsed execution time until error:\n');
     fprintf('Seconds = %.6f s\n', totalExecutionTimeSec);
-    fprintf('Minutes = %.6f min\n', totalExecutionTimeMin);
-    fprintf('Hours   = %.6f hr\n', totalExecutionTimeHr);
     fprintf('Formatted time = %02d:%02d:%06.3f\n', ...
         hoursPart, minutesPart, secondsPart);
     fprintf('=============================================\n');
@@ -699,7 +581,8 @@ end
 %% =========================
 % Local function: assign custom TF to base workspace
 %% =========================
-function assignCustomTFToBase(custom_tf)
+function plant = assignCustomTFToBase(custom_tf)
+
     if ~isstruct(custom_tf)
         error('custom_tf must be a struct.');
     end
@@ -715,14 +598,87 @@ function assignCustomTFToBase(custom_tf)
     assignin('base', 'num', custom_tf.num);
     assignin('base', 'den', custom_tf.den);
     assignin('base', 'step_amp', custom_tf.step_amp);
+
+    plant.num = custom_tf.num;
+    plant.den = custom_tf.den;
+    plant.step_amp = custom_tf.step_amp;
+    plant.G = tf(custom_tf.num, custom_tf.den);
+
 end
 
 %% =========================
-% Local function: controller cost wrapper
+% Local function: get plant from initialization output or base workspace
 %% =========================
-function cost = controllerCostWrapper(Kopt, controller_type, costFcnRaw)
-    Kfull = expandControllerGains(Kopt, controller_type);
-    cost = costFcnRaw(Kfull);
+function plant = getPlantFromInitOrBase(initOutput)
+
+    if nargin > 0 && isstruct(initOutput)
+        if isfield(initOutput, 'G') && isfield(initOutput, 'step_amp')
+            plant = initOutput;
+
+            if ~isfield(plant, 'num') || ~isfield(plant, 'den')
+                [plant.num, plant.den] = tfdata(plant.G, 'v');
+            end
+
+            return;
+        end
+
+        if isfield(initOutput, 'num') && isfield(initOutput, 'den') && isfield(initOutput, 'step_amp')
+            plant.num = initOutput.num;
+            plant.den = initOutput.den;
+            plant.step_amp = initOutput.step_amp;
+            plant.G = tf(plant.num, plant.den);
+            return;
+        end
+    end
+
+    if ~evalin('base', 'exist(''num'', ''var'')')
+        error('Transfer function numerator "num" was not found. Check the selected init function.');
+    end
+
+    if ~evalin('base', 'exist(''den'', ''var'')')
+        error('Transfer function denominator "den" was not found. Check the selected init function.');
+    end
+
+    if ~evalin('base', 'exist(''step_amp'', ''var'')')
+        error('Step amplitude "step_amp" was not found. Check the selected init function.');
+    end
+
+    plant.num = evalin('base', 'num');
+    plant.den = evalin('base', 'den');
+    plant.step_amp = evalin('base', 'step_amp');
+    plant.G = tf(plant.num, plant.den);
+
+end
+
+%% =========================
+% Local function: simulate feedback response
+%% =========================
+function [t, y] = simulateFeedbackResponse(K, controller_type, plant, sim_time)
+    kp = K(1);
+    ki = K(2);
+    kd = K(3);
+
+    switch upper(controller_type)
+        case 'PI'
+            C = pid(kp, ki, 0);
+
+        case 'PD'
+            C = pid(kp, 0, kd);
+
+        case 'PID'
+            C = pid(kp, ki, kd);
+
+        otherwise
+            error('Invalid controller_type. Use PI, PD, or PID.');
+    end
+
+    closedLoopSys = feedback(C * plant.G, 1);
+
+    t = linspace(0, sim_time, 1000);
+    [y, t] = step(plant.step_amp * closedLoopSys, t);
+
+    t = t(:);
+    y = y(:);
 end
 
 %% =========================
@@ -750,19 +706,6 @@ end
 function Kfull = znGainsByType(Ku, Tu, controller_type)
     [Kp, Ki, Kd] = ZieglerNichols(Ku, Tu, controller_type);
     Kfull = [Kp Ki Kd];
-end
-
-%% =========================
-% Local function: get reference from base workspace
-%% =========================
-function ref = getReferenceFromBase()
-    if evalin('base', 'exist(''step_amp'', ''var'')')
-        ref = evalin('base', 'step_amp');
-    elseif evalin('base', 'exist(''ref'', ''var'')')
-        ref = evalin('base', 'ref');
-    else
-        ref = 1;
-    end
 end
 
 %% =========================
@@ -857,144 +800,76 @@ function safeDiaryOff(diaryStarted)
 end
 
 %% =========================
-% Local function: clean old Simulink generated files
-%% =========================
-function cleanSimulinkGeneratedFiles(mainFolder)
-    foldersToDelete = { ...
-        fullfile(mainFolder, 'slprj'), ...
-        fullfile(mainFolder, 'simulinkcache')};
-
-    for i = 1:numel(foldersToDelete)
-        thisFolder = foldersToDelete{i};
-        if exist(thisFolder, 'dir')
-            try
-                rmdir(thisFolder, 's');
-                fprintf('Deleted old generated folder: %s\n', thisFolder);
-            catch ME
-                warning('Could not delete folder: %s\nReason: %s', thisFolder, ME.message);
-            end
-        end
-    end
-
-    try
-        Simulink.fileGenControl('reset');
-        fprintf('Simulink file generation cache reset successfully.\n');
-    catch ME
-        warning('Could not reset Simulink file generation settings: %s', ME.message);
-    end
-end
-
-%% =========================
 % Local function: estimate Ku and Tu for normal systems
 %% =========================
-function [Ku, Tu] = estimateUltimateGain(model)
+function [Ku, Tu] = estimateUltimateGain(plant, sim_time)
+
     Kp_low = 0.1;
     Kp_high = 100;
     maxSearchIter = 30;
     sim_time_local = 15;
+
     Ku = NaN;
     Tu = NaN;
 
-    [status, ~] = checkSustainedOscillation(model, Kp_high, sim_time_local);
+    [status, ~] = checkSustainedOscillation(plant, Kp_high, sim_time_local);
 
     while status == -1 && Kp_high < 10000
         Kp_low = Kp_high;
         Kp_high = Kp_high * 2;
-        [status, ~] = checkSustainedOscillation(model, Kp_high, sim_time_local);
+        [status, ~] = checkSustainedOscillation(plant, Kp_high, sim_time_local);
     end
 
     if status == -1
-        warning('System did not reach instability. It might be inherently stable.');
+        [Ku, Tu] = estimateUltimateGainFallback(plant, sim_time);
         return;
     end
 
     for k = 1:maxSearchIter
         Kp_test = (Kp_low + Kp_high) / 2;
-        [status, Tu_candidate] = checkSustainedOscillation(model, Kp_test, sim_time_local);
+        [status, Tu_candidate] = checkSustainedOscillation(plant, Kp_test, sim_time_local);
 
         if status == 0
             Ku = Kp_test;
             Tu = Tu_candidate;
             return;
+
         elseif status == 1
             Kp_high = Kp_test;
+
             if ~isnan(Tu_candidate)
                 Tu = Tu_candidate;
             end
+
         else
             Kp_low = Kp_test;
         end
     end
 
     Ku = Kp_high;
-end
 
-%% =========================
-% Local function: estimate Ku and Tu for custom system
-%% =========================
-function [Ku, Tu] = estimateUltimateGainCustom(model, custom_tf, sim_time_local)
-    Kp_low = 0.1;
-    Kp_high = 100;
-    maxSearchIter = 30;
-    Ku = NaN;
-    Tu = NaN;
-
-    [status, ~] = checkSustainedOscillationCustom(model, custom_tf, Kp_high, sim_time_local);
-
-    while status == -1 && Kp_high < 10000
-        Kp_low = Kp_high;
-        Kp_high = Kp_high * 2;
-        [status, ~] = checkSustainedOscillationCustom(model, custom_tf, Kp_high, sim_time_local);
+    if isnan(Tu)
+        [~, Tu] = checkSustainedOscillation(plant, Ku, sim_time_local);
     end
 
-    if status == -1
-        warning('Custom system did not reach instability. It might be inherently stable.');
-        return;
+    if isnan(Ku) || isnan(Tu) || isinf(Ku) || isinf(Tu)
+        [Ku, Tu] = estimateUltimateGainFallback(plant, sim_time);
     end
 
-    for k = 1:maxSearchIter
-        Kp_test = (Kp_low + Kp_high) / 2;
-        [status, Tu_candidate] = checkSustainedOscillationCustom(model, custom_tf, Kp_test, sim_time_local);
-
-        if status == 0
-            Ku = Kp_test;
-            Tu = Tu_candidate;
-            return;
-        elseif status == 1
-            Kp_high = Kp_test;
-            if ~isnan(Tu_candidate)
-                Tu = Tu_candidate;
-            end
-        else
-            Kp_low = Kp_test;
-        end
-    end
-
-    Ku = Kp_high;
 end
 
 %% =========================
 % Local function: oscillation check for normal system
-% Returns: 1 (Unstable/Growing), -1 (Stable/Decaying), 0 (Sustained)
+% Returns: 1 = Unstable/Growing, -1 = Stable/Decaying, 0 = Sustained
 %% =========================
-function [status, Tu] = checkSustainedOscillation(model, Kp_test, sim_time_local)
+function [status, Tu] = checkSustainedOscillation(plant, Kp_test, sim_time_local)
+
     status = -1;
     Tu = NaN;
 
-    assignin('base', 'kp', Kp_test);
-    assignin('base', 'ki', 0);
-    assignin('base', 'kd', 0);
-
     try
-        simOut = sim(model, 'StopTime', num2str(sim_time_local), 'CaptureErrors', 'on');
-
-        if ~isempty(simOut.ErrorMessage)
-            status = 1;
-            return;
-        end
-
-        y = squeeze(simOut.OutputResponse.Data);
-        t = squeeze(simOut.OutputResponse.Time);
+        Ktest = [Kp_test 0 0];
+        [t, y] = simulateFeedbackResponse(Ktest, 'PID', plant, sim_time_local);
 
     catch
         status = 1;
@@ -1011,6 +886,7 @@ function [status, Tu] = checkSustainedOscillation(model, Kp_test, sim_time_local
     t2 = t(start_idx:end);
 
     peak_idx = [];
+
     for i = 2:length(y2)-1
         if y2(i) > y2(i-1) && y2(i) >= y2(i+1)
             peak_idx(end+1) = i; %#ok<AGROW>
@@ -1030,11 +906,13 @@ function [status, Tu] = checkSustainedOscillation(model, Kp_test, sim_time_local
     p_times = peak_times(end-nUse+1:end);
 
     periods = diff(p_times);
+
     if isempty(periods) || any(periods <= 0)
         return;
     end
 
     Tu = mean(periods);
+
     amp_ratio = abs(p_vals(end)) / (abs(p_vals(1)) + eps);
 
     if amp_ratio > 1.05
@@ -1044,80 +922,68 @@ function [status, Tu] = checkSustainedOscillation(model, Kp_test, sim_time_local
     else
         status = 0;
     end
+
 end
 
 %% =========================
-% Local function: oscillation check for custom system
-% Returns: 1 (Unstable/Growing), -1 (Stable/Decaying), 0 (Sustained)
+% Local function: fallback Ku and Tu estimation
 %% =========================
-function [status, Tu] = checkSustainedOscillationCustom(model, custom_tf, Kp_test, sim_time_local)
-    status = -1;
+function [Ku, Tu] = estimateUltimateGainFallback(plant, sim_time)
+
+    Ku = NaN;
     Tu = NaN;
 
-    assignin('base', 'kp', Kp_test);
-    assignin('base', 'ki', 0);
-    assignin('base', 'kd', 0);
-    assignin('base', 'num', custom_tf.num);
-    assignin('base', 'den', custom_tf.den);
-    assignin('base', 'step_amp', custom_tf.step_amp);
-
     try
-        simOut = sim(model, 'StopTime', num2str(sim_time_local), 'CaptureErrors', 'on');
+        dcGainValue = dcgain(plant.G);
 
-        if ~isempty(simOut.ErrorMessage)
-            status = 1;
-            return;
+        if isnan(dcGainValue) || isinf(dcGainValue) || abs(dcGainValue) < eps
+            dcGainValue = 1;
         end
 
-        y = squeeze(simOut.OutputResponse.Data);
-        t = squeeze(simOut.OutputResponse.Time);
+        den = plant.den;
+
+        % First-order system:
+        % G(s) = K / (tau*s + 1)
+        % Pure first-order systems do not have a real ZN ultimate gain.
+        % A small virtual delay is added only for ZN estimation.
+        if numel(den) == 2 && den(1) > 0 && den(2) > 0
+
+            tau = den(1) / den(2);
+            K = abs(dcGainValue);
+
+            virtualDelay = 0.055 * tau;
+
+            phaseEquation = @(w) atan(w * tau) + w * virtualDelay - pi;
+
+            wLow = 1e-6;
+            wHigh = 1e6;
+
+            for i = 1:100
+                wMid = (wLow + wHigh) / 2;
+
+                if phaseEquation(wMid) > 0
+                    wHigh = wMid;
+                else
+                    wLow = wMid;
+                end
+            end
+
+            wCritical = (wLow + wHigh) / 2;
+
+            Ku = sqrt(1 + (wCritical * tau)^2) / K;
+            Tu = (2 * pi) / wCritical;
+
+            if Ku > 0 && Tu > 0 && isfinite(Ku) && isfinite(Tu)
+                return;
+            end
+        end
+
+        Ku = 100;
+        Tu = 0.2;
 
     catch
-        status = 1;
-        return;
+        Ku = 100;
+        Tu = 0.2;
     end
 
-    if isempty(y) || numel(y) < 20 || any(isnan(y)) || any(isinf(y)) || max(abs(y)) > 1e6
-        status = 1;
-        return;
-    end
-
-    start_idx = round(0.3 * numel(y));
-    y2 = y(start_idx:end);
-    t2 = t(start_idx:end);
-
-    peak_idx = [];
-    for i = 2:length(y2)-1
-        if y2(i) > y2(i-1) && y2(i) >= y2(i+1)
-            peak_idx(end+1) = i; %#ok<AGROW>
-        end
-    end
-
-    if numel(peak_idx) < 3
-        status = -1;
-        return;
-    end
-
-    peak_times = t2(peak_idx);
-    peak_vals  = y2(peak_idx);
-
-    nUse = min(5, numel(peak_times));
-    p_vals = peak_vals(end-nUse+1:end);
-    p_times = peak_times(end-nUse+1:end);
-
-    periods = diff(p_times);
-    if isempty(periods) || any(periods <= 0)
-        return;
-    end
-
-    Tu = mean(periods);
-    amp_ratio = abs(p_vals(end)) / (abs(p_vals(1)) + eps);
-
-    if amp_ratio > 1.05
-        status = 1;
-    elseif amp_ratio < 0.95
-        status = -1;
-    else
-        status = 0;
-    end
 end

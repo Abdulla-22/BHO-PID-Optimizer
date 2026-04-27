@@ -1,4 +1,4 @@
-function init_motor()
+function plant = init_motor()
 
 J = 0.02;
 b = 2.2e-6;
@@ -9,10 +9,12 @@ L = 2.3e-3;
 step_amp = 50;
 
 num = K;
-den = [(J*L) ((J*R)+(L*b)) ((b*R)+K^2)];
+den = [(J * L) ((J * R) + (L * b)) ((b * R) + K^2)];
 
-assignin('base','num',num);
-assignin('base','den',den);
-assignin('base','step_amp',step_amp);
+plant.name = "DCMotorSpeed";
+plant.num = num;
+plant.den = den;
+plant.step_amp = step_amp;
+plant.G = tf(num, den);
 
 end

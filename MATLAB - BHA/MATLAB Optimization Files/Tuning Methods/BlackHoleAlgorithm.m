@@ -1,15 +1,12 @@
-function [best, bestHistory] = BlackHoleAlgorithm(costFcn, nPop, MaxIt, VarMin, VarMax, controller_type, model)
+function [best, bestHistory] = BlackHoleAlgorithm(costFcn, nPop, MaxIt, VarMin, VarMax, controller_type)
 
 nVar = numel(VarMin);
 
-%% Reset stop flag at start
 setappdata(0, 'BHO_Stop', false);
 
-%% Initialize stars
 star = struct('pos', [], 'cost', []);
 
 for i = 1:nPop
-
     if shouldStopOptimization()
         best = [];
         bestHistory = table();
@@ -21,10 +18,8 @@ for i = 1:nPop
     star(i).cost = costFcn(star(i).pos);
 end
 
-%% Initialize best history table
 bestHistory = table();
 
-%% Main loop
 for it = 1:MaxIt
 
     if shouldStopOptimization()
@@ -33,7 +28,6 @@ for it = 1:MaxIt
         return;
     end
 
-    %% Save old data
     oldPos  = zeros(nPop, nVar);
     oldCost = zeros(nPop, 1);
 
@@ -42,15 +36,12 @@ for it = 1:MaxIt
         oldCost(i)   = star(i).cost;
     end
 
-    %% Step 1: Select black hole
     [~, idxBH] = min([star.cost]);
     BH = star(idxBH);
 
-    %% Step 2: Move stars toward black hole
     movedStar = star;
 
     for i = 1:nPop
-
         if shouldStopOptimization()
             best = getCurrentBest(star);
             fprintf('\nOptimization stopped at iteration %d during movement.\n', it);
@@ -67,11 +58,9 @@ for it = 1:MaxIt
         end
     end
 
-    %% Step 3: Update black hole
     [~, idxBH_new] = min([movedStar.cost]);
     BH = movedStar(idxBH_new);
 
-    %% Step 4: Event horizon
     allNewCosts = [movedStar.cost];
     sumCosts = sum(allNewCosts);
 
@@ -81,12 +70,10 @@ for it = 1:MaxIt
         R = BH.cost / sumCosts;
     end
 
-    %% Step 5: Reinitialize swallowed stars
     distVal = zeros(nPop, 1);
     status  = strings(nPop, 1);
 
     for i = 1:nPop
-
         if shouldStopOptimization()
             best = getCurrentBest(star);
             fprintf('\nOptimization stopped at iteration %d during event horizon check.\n', it);
@@ -109,47 +96,28 @@ for it = 1:MaxIt
         end
     end
 
-    %% Step 6: Update population
     star = movedStar;
 
-    %% Current best
     [~, idxBest] = min([star.cost]);
     bestStar = star(idxBest);
 
-    %% Evaluate current best solution with simulation metrics
-    iterationMetrics = evaluateBestStarMetrics(bestStar, controller_type, model);
+    Kfull = expandControllerGainsLocal(bestStar.pos, controller_type);
 
-    %% Append one row to best history
     newRow = table( ...
         it, ...
-        iterationMetrics.Kp, ...
-        iterationMetrics.Ki, ...
-        iterationMetrics.Kd, ...
+        Kfull(1), ...
+        Kfull(2), ...
+        Kfull(3), ...
         bestStar.cost, ...
-        iterationMetrics.RiseTime, ...
-        iterationMetrics.SettlingTime, ...
-        iterationMetrics.Overshoot, ...
-        iterationMetrics.PeakTime, ...
-        iterationMetrics.ESS, ...
-        iterationMetrics.Reference, ...
-        iterationMetrics.FinalValue, ...
         'VariableNames', { ...
         'Iteration', ...
         'Kp', ...
         'Ki', ...
         'Kd', ...
-        'Cost', ...
-        'RiseTime', ...
-        'SettlingTime', ...
-        'Overshoot', ...
-        'PeakTime', ...
-        'ESS', ...
-        'Reference', ...
-        'FinalValue'});
+        'Cost'});
 
     bestHistory = [bestHistory; newRow]; %#ok<AGROW>
 
-    %% Prepare display arrays
     newPos  = zeros(nPop, nVar);
     newCost = zeros(nPop, 1);
 
@@ -158,7 +126,6 @@ for it = 1:MaxIt
         newCost(i)   = star(i).cost;
     end
 
-    %% Sort for display only
     [~, sortIdx] = sort(oldCost, 'descend');
 
     oldPos  = oldPos(sortIdx, :);
@@ -168,7 +135,6 @@ for it = 1:MaxIt
     distVal = distVal(sortIdx);
     status  = status(sortIdx);
 
-    %% Variable names
     switch upper(controller_type)
         case 'PI'
             varNamesOld = {'Old_Kp', 'Old_Ki'};
@@ -186,7 +152,6 @@ for it = 1:MaxIt
             error('Invalid controller_type. Use PI, PD, or PID.');
     end
 
-    %% Print table
     fprintf('\n================ Iteration %d ================\n', it);
     fprintf('Best Cost = %.6f\n', bestStar.cost);
 
@@ -233,35 +198,22 @@ for it = 1:MaxIt
 
     fprintf('Iteration %d Best Cost = %.6f\n', it, bestStar.cost);
     fprintf('Best Kp = %.6f | Ki = %.6f | Kd = %.6f\n', ...
-        iterationMetrics.Kp, iterationMetrics.Ki, iterationMetrics.Kd);
-    fprintf('Rise Time = %.6f | Settling Time = %.6f | Overshoot = %.6f | Peak Time = %.6f | ESS = %.6f\n', ...
-        iterationMetrics.RiseTime, iterationMetrics.SettlingTime, ...
-        iterationMetrics.Overshoot, iterationMetrics.PeakTime, iterationMetrics.ESS);
+        Kfull(1), Kfull(2), Kfull(3));
 end
 
-%% Final best
 best = getCurrentBest(star);
 
 end
 
-%% =========================
-% Local function: stop flag check
-%% =========================
 function stopFlag = shouldStopOptimization()
-
 if isappdata(0, 'BHO_Stop')
     stopFlag = getappdata(0, 'BHO_Stop');
 else
     stopFlag = false;
 end
-
 end
 
-%% =========================
-% Local function: get current best star
-%% =========================
 function best = getCurrentBest(star)
-
 if isempty(star)
     best = [];
     return;
@@ -270,92 +222,8 @@ end
 allCosts = [star.cost];
 [~, idxBest] = min(allCosts);
 best = star(idxBest).pos;
-
 end
 
-%% =========================
-% Local function: evaluate best star metrics
-%% =========================
-function metrics = evaluateBestStarMetrics(bestStar, controller_type, model)
-
-Kfull = expandControllerGainsLocal(bestStar.pos, controller_type);
-
-assignin('base', 'kp', Kfull(1));
-assignin('base', 'ki', Kfull(2));
-assignin('base', 'kd', Kfull(3));
-
-metrics.Kp = Kfull(1);
-metrics.Ki = Kfull(2);
-metrics.Kd = Kfull(3);
-metrics.Reference = NaN;
-metrics.FinalValue = NaN;
-metrics.RiseTime = NaN;
-metrics.SettlingTime = NaN;
-metrics.Overshoot = NaN;
-metrics.PeakTime = NaN;
-metrics.ESS = NaN;
-
-try
-    if evalin('base', 'exist(''sim_time'',''var'')')
-        sim_time = evalin('base', 'sim_time');
-    else
-        sim_time = 10;
-    end
-
-    simOut = sim(model, 'StopTime', num2str(sim_time), 'CaptureErrors', 'on');
-
-    if ~isempty(simOut.ErrorMessage)
-        return;
-    end
-
-    resp = simOut.OutputResponse;
-    t = squeeze(resp.Time);
-    y = squeeze(resp.Data);
-
-    t = t(:);
-    y = y(:);
-
-    if isempty(t) || isempty(y) || numel(t) ~= numel(y)
-        return;
-    end
-
-    if evalin('base', 'exist(''step_amp'',''var'')')
-        ref = evalin('base', 'step_amp');
-    elseif evalin('base', 'exist(''ref'',''var'')')
-        ref = evalin('base', 'ref');
-    else
-        ref = 1;
-    end
-
-    metrics.Reference = ref;
-    metrics.FinalValue = y(end);
-
-    try
-        info = stepinfo(y, t, ref, 'SettlingTimeThreshold', 0.02);
-    catch
-        info = stepinfo(y, t, ref);
-    end
-
-    metrics.RiseTime = info.RiseTime;
-    metrics.SettlingTime = info.SettlingTime;
-    metrics.Overshoot = info.Overshoot;
-    metrics.PeakTime = info.PeakTime;
-
-    actual_ess = abs(ref - y(end));
-    if abs(ref) > 0
-        metrics.ESS = (actual_ess / abs(ref)) * 100;
-    else
-        metrics.ESS = actual_ess;
-    end
-
-catch
-end
-
-end
-
-%% =========================
-% Local function: expand controller gains
-%% =========================
 function Kfull = expandControllerGainsLocal(Kopt, controller_type)
 
 switch upper(controller_type)
@@ -374,9 +242,6 @@ end
 
 end
 
-%% =========================
-% Local function: print plain text table
-%% =========================
 function printPlainTable(T)
 
 headers = T.Properties.VariableNames;
