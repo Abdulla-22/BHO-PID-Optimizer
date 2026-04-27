@@ -10,17 +10,17 @@ totalExecutionTimer = tic;
 %% =========================
 % User selections
 %% =========================
-system_id = 1;
-controller_type = 'PD';
-optimization_mode = 1;
+system_id = 4;
+controller_type = 'PID';
+optimization_mode = 2;
 collect_results = true;
 
 %% =========================
 % Custom transfer function
 %% =========================
 custom_tf.num = [1];
-custom_tf.den = [5 1];
-custom_tf.step_amp = 30;
+custom_tf.den = [1 5];
+custom_tf.step_amp = 1;
 
 %% =========================
 % User performance specifications
@@ -34,7 +34,7 @@ wantedess       = 0.1;
 %% =========================
 nPop     = 100;
 MaxIt    = 100;
-sim_time = 20;
+sim_time = 2;
 
 %% =========================
 % Parameters validation
