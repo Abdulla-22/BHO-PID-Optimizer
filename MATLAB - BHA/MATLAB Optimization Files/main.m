@@ -12,7 +12,7 @@ totalExecutionTimer = tic;
 %% =========================
 system_id = 4;
 controller_type = 'PID';
-optimization_mode = 2;
+optimization_mode = 1;
 collect_results = true;
 
 %% =========================
@@ -349,6 +349,11 @@ try
     xlim([min(tBHO) max(tBHO)]);
 
     allY_BHO = [uBHO; yBHO];
+
+    if isfield(results, 'ZN')
+        allY_BHO = [allY_BHO; results.ZN.y(:)];
+    end
+
     ymin = min(allY_BHO);
     ymax = max(allY_BHO);
 
