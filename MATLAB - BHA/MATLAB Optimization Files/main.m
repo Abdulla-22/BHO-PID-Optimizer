@@ -10,10 +10,10 @@ totalExecutionTimer = tic;
 %% =========================
 % User selections
 %% =========================
-system_id = 4;
-controller_type = 'PID';
+system_id = 3;
+controller_type = 'PI';
 optimization_mode = 1;
-collect_results = true;
+collect_results = false;
 
 %% =========================
 % Custom transfer function
@@ -93,7 +93,7 @@ end
 switch upper(controller_type)
     case 'PI'
         VarMin = [0 0];
-        VarMax = [1000 1000];
+        VarMax = [20 20];
 
     case 'PD'
         VarMin = [0 0];
