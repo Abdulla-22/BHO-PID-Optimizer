@@ -10948,3 +10948,13 @@ D:\بروجكتات\z github - senior\PID_BHA_App\MATLAB - BHA\MATLAB Optimizati
 Total execution time:
 00:01:37.600
 =============================================
+appdesigner;
+Ball & Beam
+Motor Speed Control
+Custom TF
+Ball & Beam
+Cruise Control
+Motor Speed Control
+Custom TF
+Cruise Control
+clear
