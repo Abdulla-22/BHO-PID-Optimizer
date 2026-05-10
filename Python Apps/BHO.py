@@ -657,7 +657,7 @@ class BlackHoleOptimizerApp(ctk.CTk):
 
         best_box = ctk.CTkFrame(prog_sec, fg_color="#06111f", corner_radius=5)
         best_box.grid(row=0, column=2, sticky="nsew", padx=(5, 0), pady=(0, 10))
-        ctk.CTkLabel(best_box, text="Best Solution So Far", font=("Segoe UI", 12, "bold"), text_color="white").pack(pady=(10, 10))
+        ctk.CTkLabel(best_box, text="Best Solution", font=("Segoe UI", 12, "bold"), text_color="white").pack(pady=(10, 10))
         self.metrics = {}
         for m, color in [("Kp", self.col_accent), ("Ki", self.col_accent), ("Kd", self.col_accent), ("Cost", "#ffd400"), ("Overshoot", "#ff4bd8"), ("Rise Time", self.col_accent), ("ESS", "#59ff45")]:
             f = ctk.CTkFrame(best_box, fg_color="transparent")
