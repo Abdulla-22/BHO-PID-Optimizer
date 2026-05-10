@@ -14,7 +14,9 @@ Place the files in the following structure:
 D:\Python\
 │
 ├── env\
-├── main.py
+├── Launcher.py
+├── BHO.py
+├── Controlling_DC_Motor.py
 └── images\
 
 The "images" folder should contain all visualization GIF and PNG files.
@@ -75,7 +77,7 @@ STEP 5 - Install Required Libraries
 
 Run:
 
-pip install customtkinter numpy scipy matplotlib pandas openpyxl pillow
+pip install customtkinter numpy scipy matplotlib pandas openpyxl pillow pyserial
 
 ------------------------------------------------------------
 STEP 6 - Verify Installation
@@ -83,7 +85,7 @@ STEP 6 - Verify Installation
 
 Run:
 
-python -c "import customtkinter, numpy, scipy, matplotlib, pandas, openpyxl, PIL; print('All libraries installed successfully')"
+python -c "import customtkinter, numpy, scipy, matplotlib, pandas, openpyxl, PIL, serial; print('All libraries installed successfully')"
 
 If no errors appear, all libraries are installed correctly.
 
@@ -93,7 +95,7 @@ STEP 7 - Run the Application
 
 Run:
 
-python main.py
+python Launcher.py
 
 ------------------------------------------------------------
 Notes
@@ -109,6 +111,7 @@ Notes
    - Matplotlib for plotting
    - Pandas/OpenPyXL for saving results
    - Pillow for image and GIF handling
+   - PySerial for Arduino communication
 
 4. If the application becomes slow:
    - Reduce Population size

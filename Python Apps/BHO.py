@@ -1,23 +1,26 @@
-"""
-Black Hole Optimizer - Python Version
-Modern UI using CustomTkinter (Fixed Dropdowns, Removed Extra Buttons, Resized Viz Panel).
-
-Required packages:
-    pip install customtkinter numpy scipy matplotlib pandas openpyxl
-"""
-
 import math
 import os
 import time
 import threading
 import traceback
 import queue
+import ctypes
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+# Make Windows report the real screen size before Tkinter creates the GUI.
+# This prevents fullscreen offset and wrong scaling on 1920x1080 displays.
+try:
+    ctypes.windll.shcore.SetProcessDpiAwareness(2)  # Per-monitor DPI aware
+except Exception:
+    try:
+        ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
+
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import customtkinter as ctk
@@ -350,7 +353,6 @@ class BlackHoleOptimizerApp(ctk.CTk):
         super().__init__()
         self.title("Black Hole Optimizer")
         
-        # Center the window dynamically based on screen size
         window_w = 1450
         window_h = 720
         screen_w = self.winfo_screenwidth()
@@ -362,7 +364,7 @@ class BlackHoleOptimizerApp(ctk.CTk):
         x = int((screen_w - window_w) / 2)
         y = int((screen_h - window_h) / 2)
         
-        self.geometry(f"{window_w}x{window_h}+{max(0, x)}+{max(0, y)}")
+        self.geometry(f"{window_w}x{window_h}+-8+-2")
         self.minsize(1200, 720)
         
         # Deep space MATLAB-like colors
@@ -396,6 +398,116 @@ class BlackHoleOptimizerApp(ctk.CTk):
             paths = [os.path.join(self.images_dir, p) for p in paths]
             all_paths.append(paths)
         self.viz_player.preload(all_paths)
+        
+        # Fullscreen handling
+        self.is_fullscreen = False
+        self.normal_geometry = self.geometry()
+        self._geometry_restore_job = None
+
+        self.bind_all("<F11>", self.toggle_fullscreen)
+        self.bind_all("<Escape>", self.exit_fullscreen)
+        self.bind("<Configure>", self._remember_normal_geometry)
+
+    def toggle_fullscreen(self, event=None):
+        if self.is_fullscreen:
+            self.exit_fullscreen()
+        else:
+            self.enter_fullscreen()
+        return "break"
+
+    def enter_fullscreen(self, event=None):
+        """
+        Enter true fullscreen.
+
+        This uses native Tk fullscreen after DPI awareness is set before Tkinter import.
+        No overrideredirect is used because it causes offset and layout issues.
+        """
+        if self.is_fullscreen:
+            return "break"
+
+        self.update_idletasks()
+        self.normal_geometry = self.geometry()
+        self.is_fullscreen = True
+
+        # Reset any old window-manager states.
+        self.overrideredirect(False)
+        self.attributes("-topmost", False)
+        self.state("normal")
+        self.update_idletasks()
+
+        # Native fullscreen should cover the full 1920x1080 display.
+        self.attributes("-fullscreen", True)
+
+        # Refresh layout after entering fullscreen.
+        self.after(80, self._refresh_layout_after_fullscreen)
+        return "break"
+
+    def exit_fullscreen(self, event=None):
+        """
+        Exit fullscreen and restore the exact normal window size/position.
+        """
+        if not self.is_fullscreen:
+            return "break"
+
+        self.is_fullscreen = False
+
+        self.attributes("-fullscreen", False)
+        self.overrideredirect(False)
+        self.attributes("-topmost", False)
+        self.state("normal")
+
+        if self._geometry_restore_job is not None:
+            try:
+                self.after_cancel(self._geometry_restore_job)
+            except Exception:
+                pass
+
+        self._geometry_restore_job = self.after(80, self._restore_normal_geometry)
+        return "break"
+
+    def _restore_normal_geometry(self):
+        try:
+            if self.normal_geometry:
+                self.geometry(self.normal_geometry)
+            self.update_idletasks()
+            self.lift()
+            self.focus_force()
+        except Exception:
+            pass
+        finally:
+            self._geometry_restore_job = None
+
+    def _refresh_layout_after_fullscreen(self):
+        try:
+            self.update_idletasks()
+
+            # Force matplotlib canvases to redraw using the new fullscreen size.
+            if hasattr(self, "canvas_tf"):
+                self.canvas_tf.draw_idle()
+            if hasattr(self, "canvas_cost"):
+                self.canvas_cost.draw_idle()
+            if hasattr(self, "canvas_sys"):
+                self.canvas_sys.draw_idle()
+
+            self.lift()
+            self.focus_force()
+        except Exception:
+            pass
+
+    def _remember_normal_geometry(self, event=None):
+        """
+        Save normal geometry only when the window is not fullscreen.
+        This prevents fullscreen geometry from overwriting the restore size.
+        """
+        if self.is_fullscreen:
+            return
+
+        try:
+            geometry = self.geometry()
+            if geometry and "x" in geometry and "+" in geometry:
+                self.normal_geometry = geometry
+        except Exception:
+            pass
 
     def _setup_ttk_styles_for_treeview(self):
         style = ttk.Style(self)
