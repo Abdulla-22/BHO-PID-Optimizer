@@ -932,41 +932,77 @@ class BlackHoleOptimizerApp(ctk.CTk):
         if fdr:
             base = f"BHA_{self.system_var.get().replace(' ', '')}_{int(time.time())}"
             excel_path = os.path.join(fdr, f"{base}_Data.xlsx")
-            cost_img = os.path.join(fdr, f"{base}_Cost.png")
-            sys_img = os.path.join(fdr, f"{base}_Response.png")
             
-            self.last_history.to_excel(excel_path, index=False)
-            self.fig_cost.savefig(cost_img)
-            self.fig_sys.savefig(sys_img)
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp1, tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp2:
+                cost_img = tmp1.name
+                sys_img = tmp2.name
             
             try:
-                import openpyxl
-                from openpyxl.drawing.image import Image as xlImage
-                from openpyxl.styles import PatternFill, Font
-                wb = openpyxl.load_workbook(excel_path)
-                ws = wb.active
+                self.last_history.to_excel(excel_path, index=False)
+                self.fig_cost.savefig(cost_img)
+                self.fig_sys.savefig(sys_img)
                 
-                img1 = xlImage(cost_img)
-                img2 = xlImage(sys_img)
-                
-                # Data uses columns A-H, placing images at J2 and J20
-                ws.add_image(img1, "J2")
-                ws.add_image(img2, "J20")
-                
-                # Highlight the last iteration (best solution) row
-                last_row = ws.max_row
-                highlight_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
-                bold_font = Font(bold=True)
-                for col in range(1, 9):  # Columns A through H
-                    cell = ws.cell(row=last_row, column=col)
-                    cell.fill = highlight_fill
-                    cell.font = bold_font
-                
-                wb.save(excel_path)
+                try:
+                    import openpyxl
+                    from openpyxl.drawing.image import Image as xlImage
+                    from openpyxl.styles import PatternFill, Font
+                    from openpyxl.chart import LineChart, Reference
+                    
+                    wb = openpyxl.load_workbook(excel_path)
+                    ws = wb.active
+                    
+                    img1 = xlImage(cost_img)
+                    img2 = xlImage(sys_img)
+                    
+                    # Data uses columns A-H, placing images at J2 and J20
+                    ws.add_image(img1, "J2")
+                    ws.add_image(img2, "J20")
+                    
+                    # Highlight the last iteration (best solution) row
+                    last_row = ws.max_row
+                    highlight_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
+                    bold_font = Font(bold=True)
+                    for col in range(1, 9):  # Columns A through H
+                        cell = ws.cell(row=last_row, column=col)
+                        cell.fill = highlight_fill
+                        cell.font = bold_font
+                    
+                    # Create native Excel chart for Cost vs Iteration
+                    chart = LineChart()
+                    chart.title = "Best Cost vs Iteration"
+                    chart.style = 13
+                    chart.y_axis.title = 'Cost'
+                    chart.x_axis.title = 'Iteration'
+                    chart.width = 18
+                    chart.height = 10
+                    
+                    data = Reference(ws, min_col=5, min_row=1, max_row=last_row)
+                    cats = Reference(ws, min_col=1, min_row=2, max_row=last_row)
+                    
+                    chart.add_data(data, titles_from_data=True)
+                    chart.set_categories(cats)
+                    
+                    if len(chart.series) >= 1:
+                        chart.series[0].graphicalProperties.line.solidFill = "38BDF8"
+                        chart.series[0].graphicalProperties.line.width = 25000
+                    
+                    # Place the chart at J45
+                    ws.add_chart(chart, "J45")
+                    
+                    wb.save(excel_path)
+                except Exception as e:
+                    print(f"Failed to embed images or chart in Excel: {e}")
+                    
+                messagebox.showinfo("Saved", "Results and graphs successfully saved in Excel.")
             except Exception as e:
-                print(f"Failed to embed images in Excel: {e}")
-                
-            messagebox.showinfo("Saved", "Results and graphs successfully.")
+                messagebox.showerror("Error", f"Failed to save results: {e}")
+            finally:
+                try:
+                    os.remove(cost_img)
+                    os.remove(sys_img)
+                except Exception:
+                    pass
 
 if __name__ == "__main__":
     app = BlackHoleOptimizerApp()

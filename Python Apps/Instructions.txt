@@ -109,7 +109,7 @@ Notes
    - CustomTkinter for GUI
    - NumPy and SciPy for calculations
    - Matplotlib for plotting
-   - Pandas/OpenPyXL for saving results
+   - Pandas/OpenPyXL for saving results and embedding native Excel charts
    - Pillow for image and GIF handling
    - PySerial for Arduino communication
 

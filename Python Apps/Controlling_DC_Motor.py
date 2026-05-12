@@ -129,12 +129,11 @@ class ControllingDCMotorApp(ctk.CTk):
         self.prev_rpm_filt = 0.0
         self.first_sample = True
         
-        self.buf_max = 600
-        self.t_buf = np.full(self.buf_max, np.nan)
-        self.target_buf = np.full(self.buf_max, np.nan)
-        self.rpm_buf = np.full(self.buf_max, np.nan)
-        self.err_buf = np.full(self.buf_max, np.nan)
-        self.pwm_buf = np.full(self.buf_max, np.nan)
+        self.t_list = []
+        self.target_list = []
+        self.rpm_list = []
+        self.err_list = []
+        self.pwm_list = []
 
         # Build UI
         self._build_ui()
@@ -748,13 +747,11 @@ class ControllingDCMotorApp(ctk.CTk):
         except ValueError:
             Kp, Ki, Kd = 0.0, 0.0, 0.0
 
-        self.t_buf.fill(np.nan)
-        self.target_buf.fill(np.nan)
-        self.rpm_buf.fill(np.nan)
-        self.err_buf.fill(np.nan)
-        self.pwm_buf.fill(np.nan)
-
-        idx = 0
+        self.t_list.clear()
+        self.target_list.clear()
+        self.rpm_list.clear()
+        self.err_list.clear()
+        self.pwm_list.clear()
 
         while self.is_running:
             loop_start = time.perf_counter()
@@ -791,22 +788,11 @@ class ControllingDCMotorApp(ctk.CTk):
             direction = self.cb_dir.get()
             self._write_pwm(direction, pwm_cmd)
 
-            if idx < self.buf_max:
-                write_idx = idx
-                idx += 1
-            else:
-                self.t_buf[:-1] = self.t_buf[1:]
-                self.target_buf[:-1] = self.target_buf[1:]
-                self.rpm_buf[:-1] = self.rpm_buf[1:]
-                self.err_buf[:-1] = self.err_buf[1:]
-                self.pwm_buf[:-1] = self.pwm_buf[1:]
-                write_idx = -1
-
-            self.t_buf[write_idx] = elapsed_time
-            self.target_buf[write_idx] = target
-            self.rpm_buf[write_idx] = rpm_filt
-            self.err_buf[write_idx] = err_now
-            self.pwm_buf[write_idx] = pwm_cmd
+            self.t_list.append(elapsed_time)
+            self.target_list.append(target)
+            self.rpm_list.append(rpm_filt)
+            self.err_list.append(err_now)
+            self.pwm_list.append(pwm_cmd)
 
             self.after(0, lambda p=pwm_cmd, r=rpm_filt, e=err_now: self._update_labels(p, r, e))
 
@@ -831,12 +817,11 @@ class ControllingDCMotorApp(ctk.CTk):
         self.ax_ctrl.clear()
         self._style_ax(self.ax_ctrl, "Motor Response", "Time (s)", "RPM / PWM")
         
-        valid_idx = ~np.isnan(self.t_buf)
-        if np.any(valid_idx):
-            t = self.t_buf[valid_idx]
-            self.ax_ctrl.plot(t, self.target_buf[valid_idx], color="#ffb703", label="Target", linewidth=2)
-            self.ax_ctrl.plot(t, self.rpm_buf[valid_idx], color="#38bdf8", label="Actual RPM", linewidth=2)
-            self.ax_ctrl.plot(t, self.pwm_buf[valid_idx], color="#ff4bd8", label="PWM", linewidth=1.5, linestyle="--")
+        if self.t_list:
+            t = np.array(self.t_list)
+            self.ax_ctrl.plot(t, self.target_list, color="#ffb703", label="Target", linewidth=2)
+            self.ax_ctrl.plot(t, self.rpm_list, color="#38bdf8", label="Actual RPM", linewidth=2)
+            self.ax_ctrl.plot(t, self.pwm_list, color="#ff4bd8", label="PWM", linewidth=1.5, linestyle="--")
             self.ax_ctrl.legend(loc="upper right", facecolor=self.col_panel, edgecolor=self.col_border, labelcolor="white")
             
         self.canvas_ctrl.draw()
@@ -844,26 +829,75 @@ class ControllingDCMotorApp(ctk.CTk):
         self.after(200, self._update_plot)
 
     def save_data(self):
-        valid_idx = ~np.isnan(self.t_buf)
-        if not np.any(valid_idx):
+        if not self.t_list:
             messagebox.showinfo("Info", "No data to save.")
             return
             
-        t = self.t_buf[valid_idx]
-        target = self.target_buf[valid_idx]
-        rpm = self.rpm_buf[valid_idx]
-        err = self.err_buf[valid_idx]
-        pwm = self.pwm_buf[valid_idx]
-        
-        df = pd.DataFrame({"Time(s)": t, "Target RPM": target, "Actual RPM": rpm, "Error": err, "PWM": pwm})
+        df = pd.DataFrame({"Time(s)": self.t_list, "Target RPM": self.target_list, "Actual RPM": self.rpm_list, "Error": self.err_list, "PWM": self.pwm_list})
         
         file_path = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel Files", "*.xlsx")])
         if file_path:
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                img_path = tmp.name
+            
             try:
+                self.fig_ctrl.savefig(img_path)
                 df.to_excel(file_path, index=False)
-                messagebox.showinfo("Success", f"Data saved successfully to:\n{file_path}")
+                
+                try:
+                    import openpyxl
+                    from openpyxl.drawing.image import Image as xlImage
+                    from openpyxl.chart import LineChart, Reference
+                    
+                    wb = openpyxl.load_workbook(file_path)
+                    ws = wb.active
+                    img = xlImage(img_path)
+                    ws.add_image(img, "G2")
+                    
+                    # Create native Excel chart
+                    chart = LineChart()
+                    chart.title = "Motor Response (Target vs Actual vs PWM)"
+                    chart.style = 13
+                    chart.y_axis.title = 'RPM / PWM'
+                    chart.x_axis.title = 'Time (s)'
+                    chart.width = 20
+                    chart.height = 10
+                    
+                    last_row = ws.max_row
+                    cats = Reference(ws, min_col=1, min_row=2, max_row=last_row)
+                    
+                    for col in [2, 3, 5]:  # Target RPM, Actual RPM, PWM
+                        data = Reference(ws, min_col=col, min_row=1, max_row=last_row)
+                        chart.add_data(data, titles_from_data=True)
+                        
+                    chart.set_categories(cats)
+                    
+                    if len(chart.series) >= 1:
+                        chart.series[0].graphicalProperties.line.solidFill = "FFB703"
+                        chart.series[0].graphicalProperties.line.width = 20000
+                    if len(chart.series) >= 2:
+                        chart.series[1].graphicalProperties.line.solidFill = "38BDF8"
+                        chart.series[1].graphicalProperties.line.width = 25000
+                    if len(chart.series) >= 3:
+                        chart.series[2].graphicalProperties.line.solidFill = "FF4BD8"
+                        chart.series[2].graphicalProperties.line.dashStyle = "dash"
+                        chart.series[2].graphicalProperties.line.width = 15000
+                        
+                    ws.add_chart(chart, "G45")
+                    
+                    wb.save(file_path)
+                except Exception as e:
+                    print(f"Failed to embed images or chart in Excel: {e}")
+                    
+                messagebox.showinfo("Success", f"Data and graph saved successfully to:\n{file_path}")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to save data: {e}")
+            finally:
+                try:
+                    os.remove(img_path)
+                except Exception:
+                    pass
 
     # ==========================================
     # Optimization (BHA Live Hardware Testing)
