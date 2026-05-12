@@ -814,18 +814,40 @@ class ControllingDCMotorApp(ctk.CTk):
         if not self.is_running:
             return
             
-        self.ax_ctrl.clear()
-        self._style_ax(self.ax_ctrl, "Motor Response", "Time (s)", "RPM / PWM")
-        
         if self.t_list:
-            t = np.array(self.t_list)
-            self.ax_ctrl.plot(t, self.target_list, color="#ffb703", label="Target", linewidth=2)
-            self.ax_ctrl.plot(t, self.rpm_list, color="#38bdf8", label="Actual RPM", linewidth=2)
-            self.ax_ctrl.plot(t, self.pwm_list, color="#ff4bd8", label="PWM", linewidth=1.5, linestyle="--")
-            self.ax_ctrl.legend(loc="upper right", facecolor=self.col_panel, edgecolor=self.col_border, labelcolor="white")
+            if not hasattr(self, 'line_target') or self.line_target not in self.ax_ctrl.lines:
+                self.ax_ctrl.clear()
+                self._style_ax(self.ax_ctrl, "Motor Response", "Time (s)", "RPM / PWM")
+                self.line_target, = self.ax_ctrl.plot([], [], color="#ffb703", label="Target", linewidth=2)
+                self.line_rpm, = self.ax_ctrl.plot([], [], color="#38bdf8", label="Actual RPM", linewidth=2)
+                self.line_pwm, = self.ax_ctrl.plot([], [], color="#ff4bd8", label="PWM", linewidth=1.5, linestyle="--")
+                self.ax_ctrl.legend(loc="upper right", facecolor=self.col_panel, edgecolor=self.col_border, labelcolor="white")
             
-        self.canvas_ctrl.draw()
-        
+            t = np.array(self.t_list)
+            target = np.array(self.target_list)
+            rpm = np.array(self.rpm_list)
+            pwm = np.array(self.pwm_list)
+            
+            n = len(t)
+            if n > 1500:
+                step = n // 750
+                t = t[::step]
+                target = target[::step]
+                rpm = rpm[::step]
+                pwm = pwm[::step]
+                
+            self.line_target.set_data(t, target)
+            self.line_rpm.set_data(t, rpm)
+            self.line_pwm.set_data(t, pwm)
+            
+            if len(t) > 0:
+                self.ax_ctrl.set_xlim(0, max(2.0, t[-1]))
+                y_max = max(260, np.max(rpm) * 1.2 if len(rpm) > 0 else 0, np.max(target) * 1.2 if len(target) > 0 else 0)
+                y_min = min(0, np.min(rpm) * 1.2 if len(rpm) > 0 else 0)
+                self.ax_ctrl.set_ylim(y_min, y_max)
+                
+            self.canvas_ctrl.draw_idle()
+            
         self.after(200, self._update_plot)
 
     def save_data(self):
