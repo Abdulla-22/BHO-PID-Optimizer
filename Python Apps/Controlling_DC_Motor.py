@@ -90,14 +90,14 @@ class ControllingDCMotorApp(ctk.CTk):
         self.PWM_AT_MAX_RPM = 255.0
         self.RPM_AT_MAX_PWM = 130.0   # ← KEY: actual max output RPM at full PWM
         self.PWM_DEADZONE = 35.0      # Minimum PWM to overcome static friction (490 Hz PWM)
-        self.PWM_CORRECTION_LIMIT = 60.0  # Max PID correction ± on top of feedforward
+        self.PWM_CORRECTION_LIMIT = 255.0  # Max PID correction ± on top of feedforward
         self.PWM_MIN = 0
         self.PWM_MAX = 255
         
         # ===== PID Control Tuning =====
         self.rpmAlpha    = 0.028391   # Filter for RPM
         self.dAlpha      = 0.050193   # Filter for Derivative
-        self.I_LIMIT     = 100.0
+        self.I_LIMIT     = 255.0
 
         # ===== Shared real-hardware control behavior =====
         # These values are used in both Motor Control and Motor Optimizing trial tests.
@@ -646,7 +646,7 @@ class ControllingDCMotorApp(ctk.CTk):
 
         # Clamp impossible encoder spikes before filtering.
         # This is applied in both Control and Optimizing panels.
-        spike_limit = max(target * 2.2, state["rpm_filt"] * 2.2, 25.0)
+        spike_limit = max(target * 3.0, state["rpm_filt"] * 3.0, 300.0)
         raw_rpm = min(raw_rpm, spike_limit)
 
         # Slew-limit the measured RPM before the low-pass filter.
