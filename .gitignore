@@ -1,0 +1,10 @@
+# MATLAB / Simulink generated files
+slprj/
+*.slxc
+*.asv
+
+# Multisim backups
+*Security copy*
+
+# Resume checkpoint, not needed in repo
+BHO_PID_Stochastic_Checkpoint.mat
