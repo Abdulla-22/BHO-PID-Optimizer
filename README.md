@@ -5,8 +5,8 @@ Black Hole Optimization (BHO) framework for tuning PI, PD and PID controllers on
 Final-year project, Electrical Engineering, School of Power and Automation Engineering, Bahrain Polytechnic.
 
 <p align="center">
-  <a href="https://github.com/Abdulla-22/BHO-PID-Optimizer/releases">
-    <img alt="Windows installer releases" src="https://img.shields.io/badge/Download-Windows_installer-2ea44f?style=for-the-badge">
+  <a href="https://github.com/Abdulla-22/BHO-PID-Optimizer/releases/latest/download/BHO_Setup.exe">
+    <img alt="Download BHO_Setup.exe" src="https://img.shields.io/badge/Download-Windows_installer-2ea44f?style=for-the-badge">
   </a>
   <a href="LICENSE">
     <img alt="Project license: MIT" src="https://img.shields.io/badge/License-MIT-54dfcf?style=for-the-badge">
