@@ -1,0 +1,126 @@
+Black Hole Optimizer - Installation Guide
+=========================================
+
+Requirements
+------------
+- Python 3.10 or newer
+- Windows operating system
+- Internet connection for downloading libraries
+
+Project Structure
+-----------------
+Place the files in the following structure:
+
+D:\Python\
+│
+├── env\
+├── Launcher.py
+├── BHO.py
+├── Controlling_DC_Motor.py
+└── images\
+
+The "images" folder should contain all visualization GIF and PNG files.
+
+------------------------------------------------------------
+STEP 1 - Open PowerShell
+------------------------------------------------------------
+
+Open PowerShell inside the project folder:
+
+Example:
+
+cd D:\Python
+
+------------------------------------------------------------
+STEP 2 - Create Virtual Environment
+------------------------------------------------------------
+
+Run the following command:
+
+python -m venv env
+
+This will create a virtual environment folder named "env".
+
+------------------------------------------------------------
+STEP 3 - Activate Virtual Environment
+------------------------------------------------------------
+
+Run:
+
+.\env\Scripts\Activate.ps1
+
+If PowerShell blocks script execution, run:
+
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+Then activate the environment again:
+
+.\env\Scripts\Activate.ps1
+
+After activation, you should see:
+
+(env)
+
+at the beginning of the terminal line.
+
+------------------------------------------------------------
+STEP 4 - Upgrade pip
+------------------------------------------------------------
+
+Run:
+
+python -m pip install --upgrade pip
+
+------------------------------------------------------------
+STEP 5 - Install Required Libraries
+------------------------------------------------------------
+
+Run:
+
+pip install customtkinter numpy scipy matplotlib pandas openpyxl pillow pyserial
+
+------------------------------------------------------------
+STEP 6 - Verify Installation
+------------------------------------------------------------
+
+Run:
+
+python -c "import customtkinter, numpy, scipy, matplotlib, pandas, openpyxl, PIL, serial; print('All libraries installed successfully')"
+
+If no errors appear, all libraries are installed correctly.
+
+------------------------------------------------------------
+STEP 7 - Run the Application
+------------------------------------------------------------
+
+Run:
+
+python Launcher.py
+
+------------------------------------------------------------
+Notes
+------------------------------------------------------------
+
+1. Do not rename the images folder.
+
+2. Keep all GIF and PNG visualization files inside the images folder.
+
+3. The application uses:
+   - CustomTkinter for GUI
+   - NumPy and SciPy for calculations
+   - Matplotlib for plotting
+   - Pandas/OpenPyXL for saving results and embedding native Excel charts
+   - Pillow for image and GIF handling
+   - PySerial for Arduino communication
+
+4. If the application becomes slow:
+   - Reduce Population size
+   - Reduce Max Iterations
+
+5. Recommended settings:
+   Population = 30
+   Max Iterations = 50
+
+------------------------------------------------------------
+End of Instructions
+------------------------------------------------------------

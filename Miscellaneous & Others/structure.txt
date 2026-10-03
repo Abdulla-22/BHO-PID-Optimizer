@@ -1,0 +1,36 @@
+MATLAB Optimization Project
+│
+├── Costs Functions
+│   ├── cost_ballandbeam.m
+│   ├── cost_cruise.m
+│   └── cost_motor.m
+│
+├── images
+│
+├── Initialization
+│   ├── init_ballandbeam.m
+│   ├── init_cruise.m
+│   └── init_motor.m
+│
+├── Simulink Models
+│   ├── PI
+│   │   ├── BallandBeamPI.slx
+│   │   ├── CruiseControlPI.slx
+│   │   └── MotorSpeedPI.slx
+│   │
+│   ├── PD
+│   │   ├── BallandBeamPD.slx
+│   │   ├── CruiseControlPD.slx
+│   │   └── MotorSpeedPD.slx
+│   │
+│   └── PID
+│       ├── BallandBeamPID.slx
+│       ├── CruiseControlPID.slx
+│       └── MotorSpeedPID.slx
+│
+├── Tuning Methods
+│   ├── BlackHoleAlgorithm.m
+│   └── ZieglerNichols.m
+│
+├── BHA_App.mlapp
+└── main.m

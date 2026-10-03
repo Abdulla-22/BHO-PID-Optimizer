@@ -1,0 +1,2 @@
+kp,ki,kd,finalRpmAlpha,finalDAlpha,finalScore,Var7,Var8,Var9,Var10,Var11,Var12,Var13,Var14_1,Var14_2,Var14_3,Var14_4,Var14_5,Var14_6,Var14_7,Var14_8,Var14_9,Var14_10,Var14_11,Var14_12
+8.465543539,4.902590596,0.032982879,0.2875,0.06,0.271643144502257,1.2631053,0,4.9846611,0.0392760892842661,0.243421788627579,0.289306088975089,VariableNames,Kp,Ki,Kd,Best_rpmAlpha,Best_dAlpha,OptimizationScore,RiseTime,OvershootPercent,SettlingTime,SteadyStateError,IAE,FinalScore

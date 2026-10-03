@@ -1,0 +1,67 @@
+name: Build Windows installer
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: Python Apps
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller customtkinter numpy scipy pandas matplotlib pillow openpyxl pyserial
+
+      - name: Build executable with PyInstaller
+        run: |
+          pyinstaller --noconfirm --clean --noconsole --onedir --noupx --name BHO --distpath packaging/dist --workpath packaging/build --specpath packaging --version-file "$PWD/packaging/version_info.txt" --icon "$PWD/packaging/app.ico" --collect-all customtkinter --hidden-import openpyxl --add-data "$PWD/images;images" "$PWD/BHO.py"
+
+      - name: Collect project and dependency licenses
+        run: |
+          python packaging/collect_licenses.py --output packaging/dist/BHO
+
+      - name: Download Visual C++ runtime
+        run: |
+          Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "packaging\vc_redist.x64.exe"
+
+      - name: Install Inno Setup
+        run: |
+          choco install innosetup -y --no-progress
+
+      - name: Build installer
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" packaging\BHO_Setup.iss
+
+      - name: Compute SHA-256
+        run: |
+          Get-FileHash packaging\installer\BHO_Setup.exe -Algorithm SHA256 | Format-List
+
+      - name: Upload installer as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BHO_Setup
+          path: Python Apps/packaging/installer/BHO_Setup.exe
+
+      - name: Attach installer to the release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Python Apps/packaging/installer/BHO_Setup.exe
