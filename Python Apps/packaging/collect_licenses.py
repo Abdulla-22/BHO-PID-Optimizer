@@ -23,6 +23,18 @@ RUNTIME_PACKAGES = (
     "openpyxl", "pyserial",
 )
 NOTICE_NAME = re.compile(r"(?:licen[sc]e|copying|copyright|notice)", re.IGNORECASE)
+# License texts kept in the repository for packages whose wheels ship none
+# (e.g. pyserial 3.5). Folder name = normalized distribution name.
+VENDORED_DIR = PACKAGING_DIR / "third_party_licenses"
+
+
+def normalized(name: str) -> str:
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def vendored_files(name: str) -> list[Path]:
+    folder = VENDORED_DIR / normalized(name)
+    return sorted(p for p in folder.rglob("*") if p.is_file()) if folder.is_dir() else []
 
 
 def safe_component(value: str) -> str:
@@ -64,6 +76,13 @@ def collect_distribution(distribution: metadata.Distribution, target: Path) -> d
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, destination)
         result["notice_files"].append(relative_target.as_posix())
+    # Add repository-vendored license texts for wheels that ship none.
+    for source in vendored_files(result["name"]):
+        relative_target = Path("vendored") / source.relative_to(VENDORED_DIR / normalized(result["name"]))
+        destination = target / relative_target
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+        result["notice_files"].append(relative_target.as_posix())
     # Retain exact metadata even when a wheel supplies no separate notice file.
     (target / "metadata.json").write_text(
         json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
@@ -83,10 +102,11 @@ def collect(output: Path, required_packages: list[str]) -> dict:
         if not any(
             any(NOTICE_NAME.search(part) for part in file.parts)
             for file in distribution.files or []
-        ):
+        ) and not vendored_files(package):
             raise RuntimeError(
                 f"Required runtime dependency {package!r} supplies no recorded "
-                "license/notice files. Review its distribution before releasing."
+                "license/notice files and none is vendored in "
+                f"{VENDORED_DIR.name}/{normalized(package)}/. Review its distribution before releasing."
             )
 
     project_license = REPOSITORY_DIR / "LICENSE"

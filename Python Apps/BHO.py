@@ -353,19 +353,8 @@ class BlackHoleOptimizerApp(ctk.CTk):
         super().__init__()
         self.title("Black Hole Optimizer")
         
-        window_w = 1450
-        window_h = 720
-        screen_w = self.winfo_screenwidth()
-        screen_h = self.winfo_screenheight()
-        
-        if window_w > screen_w: window_w = screen_w - 50
-        if window_h > screen_h: window_h = screen_h - 50
-        
-        x = int((screen_w - window_w) / 2)
-        y = int((screen_h - window_h) / 2)
-        
-        self.geometry(f"{window_w}x{window_h}+-8+-2")
-        self.minsize(1200, 720)
+        # Fit the window to any resolution / Windows scaling (see _fit_window_to_screen).
+        self._fit_window_to_screen(pref_w=1450, pref_h=860, min_w=1150, min_h=700)
         
         # Deep space MATLAB-like colors
         self.col_bg = "#06111f"
@@ -397,7 +386,8 @@ class BlackHoleOptimizerApp(ctk.CTk):
             paths = v if isinstance(v, list) else [v]
             paths = [os.path.join(self.images_dir, p) for p in paths]
             all_paths.append(paths)
-        self.viz_player.preload(all_paths)
+        scale = ctk.ScalingTracker.get_widget_scaling(self)
+        self.viz_player.preload(all_paths, w=int(220 * scale), h=int(180 * scale))
         
         # Fullscreen handling
         self.is_fullscreen = False
@@ -406,7 +396,54 @@ class BlackHoleOptimizerApp(ctk.CTk):
 
         self.bind_all("<F11>", self.toggle_fullscreen)
         self.bind_all("<Escape>", self.exit_fullscreen)
-        self.bind("<Configure>", self._remember_normal_geometry)
+        self.bind("<Configure>", self._remember_normal_geometry, add="+")
+
+    # ------------------------------------------------------------
+    # Window sizing (works for any resolution and Windows scaling)
+    # ------------------------------------------------------------
+    def _get_work_area_px(self):
+        """Return (x, y, w, h) of the usable desktop area in physical pixels (taskbar excluded on Windows)."""
+        try:
+            class _Rect(ctypes.Structure):
+                _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
+                            ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+            rect = _Rect()
+            # SPI_GETWORKAREA = 0x0030
+            if ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(rect), 0):
+                return rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top
+        except Exception:
+            pass
+        return 0, 0, self.winfo_screenwidth(), self.winfo_screenheight()
+
+    def _fit_window_to_screen(self, pref_w, pref_h, min_w, min_h):
+        """
+        Size and center the window so it always fits the usable screen area.
+
+        CustomTkinter scales geometry() and minsize() by the Windows display scaling
+        (e.g. 1200 x 720 becomes 1800 x 1080 physical pixels at 150 %), while the
+        screen size is reported in physical pixels. All limits are therefore
+        converted to CTk logical units before they are applied.
+        """
+        try:
+            scale = ctk.ScalingTracker.get_window_scaling(self)
+        except Exception:
+            scale = 1.0
+        area_x, area_y, area_w, area_h = self._get_work_area_px()
+
+        # Reserve space for the window frame and title bar (physical pixels).
+        frame_w = int(round(16 * scale))
+        frame_h = int(round(40 * scale))
+        avail_w = max(400, int((area_w - frame_w) / scale))
+        avail_h = max(300, int((area_h - frame_h) / scale))
+
+        width = min(pref_w, avail_w)
+        height = min(pref_h, avail_h)
+        self.minsize(min(min_w, width), min(min_h, height))
+
+        # Position offsets are not scaled by CTk, so they stay in physical pixels.
+        x = area_x + max(0, (area_w - int(round(width * scale)) - frame_w) // 2)
+        y = area_y + max(0, (area_h - int(round(height * scale)) - frame_h) // 2)
+        self.geometry(f"{width}x{height}+{x}+{y}")
 
     def toggle_fullscreen(self, event=None):
         if self.is_fullscreen:
@@ -512,7 +549,8 @@ class BlackHoleOptimizerApp(ctk.CTk):
     def _setup_ttk_styles_for_treeview(self):
         style = ttk.Style(self)
         style.theme_use("default")
-        style.configure("Treeview", background=self.col_panel, foreground="white", fieldbackground=self.col_panel, borderwidth=0, rowheight=24)
+        style.configure("Treeview", background=self.col_panel, foreground="white", fieldbackground=self.col_panel, borderwidth=0,
+                        rowheight=int(round(24 * ctk.ScalingTracker.get_widget_scaling(self))))
         style.map('Treeview', background=[('selected', self.col_border)])
         style.configure("Treeview.Heading", background="#071827", foreground=self.col_accent, relief="flat", font=("Segoe UI", 9, "bold"))
         style.map("Treeview.Heading", background=[('active', self.col_border)])
@@ -539,12 +577,20 @@ class BlackHoleOptimizerApp(ctk.CTk):
 
         main_frame = ctk.CTkFrame(self, fg_color="transparent")
         main_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
-        main_frame.columnconfigure(0, weight=0, minsize=420)
+        main_frame.columnconfigure(0, weight=0)
         main_frame.columnconfigure(1, weight=1)
         main_frame.rowconfigure(0, weight=1)
 
-        left_panel = ctk.CTkFrame(main_frame, fg_color="transparent")
-        left_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        # Scrollable, so every input stays reachable when the window is short.
+        left_col = ctk.CTkFrame(main_frame, fg_color="transparent")
+        left_col.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        left_col.columnconfigure(0, weight=1)
+        left_col.rowconfigure(0, weight=1)
+
+        left_panel = ctk.CTkScrollableFrame(left_col, fg_color="transparent", width=360, corner_radius=0,
+                                            scrollbar_button_color=self.col_border,
+                                            scrollbar_button_hover_color=self.col_accent)
+        left_panel.grid(row=0, column=0, sticky="nsew")
         left_panel.columnconfigure(0, weight=1)
         left_panel.rowconfigure(2, weight=1)
 
@@ -591,8 +637,8 @@ class BlackHoleOptimizerApp(ctk.CTk):
         self.e_ess = self._add_entry(sec3, "Wanted ESS (%):", self.w_ess, 7, 0)
 
         # Buttons
-        act_frame = ctk.CTkFrame(left_panel, fg_color="transparent")
-        act_frame.grid(row=3, column=0, sticky="ew", pady=(0, 5))
+        act_frame = ctk.CTkFrame(left_col, fg_color="transparent")
+        act_frame.grid(row=1, column=0, sticky="ew", pady=(8, 0))
         act_frame.columnconfigure(0, weight=1); act_frame.columnconfigure(1, weight=1); act_frame.columnconfigure(2, weight=1)
         self.btn_run = ctk.CTkButton(act_frame, text="▶ Run", fg_color="#166534", hover_color="#22c55e", font=("Segoe UI", 12, "bold"), command=self.run_opt, height=28)
         self.btn_stop = ctk.CTkButton(act_frame, text="⏸ Stop", fg_color="#7f1d1d", hover_color="#ef4444", font=("Segoe UI", 12, "bold"), state="disabled", command=self.stop_opt, height=28)
@@ -613,10 +659,9 @@ class BlackHoleOptimizerApp(ctk.CTk):
         viz_sec.columnconfigure(0, weight=0); viz_sec.columnconfigure(1, weight=1)
         
         # Reduced height for ImageStagePlayer
-        self.viz_player = ImageStagePlayer(viz_sec, bg_color="#ffffff", width=220, height=220)
+        self.viz_player = ImageStagePlayer(viz_sec, bg_color="#ffffff", width=220, height=180)
+        self.viz_player.pack_propagate(False)  # keep the fixed size; the image label is packed inside
         self.viz_player.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
-        self.viz_player.pack_propagate(False)
-        self.viz_player.grid_propagate(False)
 
         right_viz_panel = ctk.CTkFrame(viz_sec, fg_color="transparent")
         right_viz_panel.grid(row=0, column=1, sticky="nsew")
@@ -634,7 +679,7 @@ class BlackHoleOptimizerApp(ctk.CTk):
         self.tf_box.grid(row=1, column=0, sticky="nsew")
         ctk.CTkLabel(self.tf_box, text="Transfer Function Preview", font=("Segoe UI", 11, "bold"), text_color=self.col_accent).pack(anchor="w", padx=10, pady=2)
         
-        self.fig_tf = Figure(figsize=(3, 1), dpi=100, facecolor="#06111f")
+        self.fig_tf = Figure(figsize=(3, 1), dpi=100, layout="constrained", facecolor="#06111f")
         self.ax_tf = self.fig_tf.add_subplot(111)
         self.ax_tf.axis("off")
         self.canvas_tf = FigureCanvasTkAgg(self.fig_tf, master=self.tf_box)
@@ -642,40 +687,49 @@ class BlackHoleOptimizerApp(ctk.CTk):
 
         # Progress Area
         prog_sec = self._create_section(right_frame, "Optimization Progress", 1, 0)
-        prog_sec.columnconfigure(0, weight=1); prog_sec.columnconfigure(1, weight=1); prog_sec.columnconfigure(2, weight=0)
-        prog_sec.rowconfigure(0, weight=0); prog_sec.rowconfigure(1, weight=1)
+        prog_sec.columnconfigure(0, weight=1); prog_sec.columnconfigure(1, weight=1)
+        prog_sec.rowconfigure(0, weight=1); prog_sec.rowconfigure(1, weight=1)
 
-        self.fig_cost = Figure(figsize=(4, 2.5), dpi=100, facecolor=self.col_panel)
+        self.fig_cost = Figure(figsize=(4, 2.5), dpi=100, layout="constrained", facecolor=self.col_panel)
         self.ax_cost = self.fig_cost.add_subplot(111)
         self.canvas_cost = FigureCanvasTkAgg(self.fig_cost, master=prog_sec)
         self.canvas_cost.get_tk_widget().grid(row=0, column=0, sticky="nsew", padx=(0, 5), pady=(0, 10))
 
-        self.fig_sys = Figure(figsize=(4, 2.5), dpi=100, facecolor=self.col_panel)
+        self.fig_sys = Figure(figsize=(4, 2.5), dpi=100, layout="constrained", facecolor=self.col_panel)
         self.ax_sys = self.fig_sys.add_subplot(111)
         self.canvas_sys = FigureCanvasTkAgg(self.fig_sys, master=prog_sec)
         self.canvas_sys.get_tk_widget().grid(row=0, column=1, sticky="nsew", padx=5, pady=(0, 10))
 
-        best_box = ctk.CTkFrame(prog_sec, fg_color="#06111f", corner_radius=5)
-        best_box.grid(row=0, column=2, sticky="nsew", padx=(5, 0), pady=(0, 10))
-        ctk.CTkLabel(best_box, text="Best Solution", font=("Segoe UI", 12, "bold"), text_color="white").pack(pady=(10, 10))
+        # Best solution sits next to the visualization (fixed-height row), not in the shrinking progress area.
+        best_box = ctk.CTkFrame(viz_sec, fg_color="#06111f", corner_radius=5)
+        best_box.grid(row=0, column=2, sticky="nsew", padx=(10, 0))
+        ctk.CTkLabel(best_box, text="Best Solution", font=("Segoe UI", 12, "bold"), text_color="white").pack(pady=(6, 4))
         self.metrics = {}
         for m, color in [("Kp", self.col_accent), ("Ki", self.col_accent), ("Kd", self.col_accent), ("Cost", "#ffd400"), ("Overshoot", "#ff4bd8"), ("Rise Time", self.col_accent), ("ESS", "#59ff45")]:
             f = ctk.CTkFrame(best_box, fg_color="transparent")
             f.pack(fill="x", padx=15, pady=1)
-            ctk.CTkLabel(f, text=m, font=("Segoe UI", 11)).pack(side="left")
-            lbl = ctk.CTkLabel(f, text="--", font=("Segoe UI", 11, "bold"), text_color=color)
-            lbl.pack(side="right")
+            ctk.CTkLabel(f, text=m, font=("Segoe UI", 11), height=20).pack(side="left")
+            lbl = ctk.CTkLabel(f, text="--", font=("Segoe UI", 11, "bold"), text_color=color, height=20)
+            lbl.pack(side="right", padx=(8, 0))
             self.metrics[m] = lbl
 
         tv_frame = ctk.CTkFrame(prog_sec, fg_color="transparent")
-        tv_frame.grid(row=1, column=0, columnspan=3, sticky="nsew")
+        tv_frame.grid(row=1, column=0, columnspan=2, sticky="nsew")
         tv_frame.columnconfigure(0, weight=1); tv_frame.rowconfigure(0, weight=1)
         cols = ["Iteration", "Kp", "Ki", "Kd", "Cost", "Overshoot", "Rise Time", "Steady-State Error"]
-        self.tree = ttk.Treeview(tv_frame, columns=cols, show="headings")
-        for c in cols: self.tree.heading(c, text=c); self.tree.column(c, width=100, anchor="center")
+        # height=6 keeps the requested size small; the grid weight lets the table grow with the window.
+        self.tree = ttk.Treeview(tv_frame, columns=cols, show="headings", height=6)
+        sc = ctk.ScalingTracker.get_widget_scaling(self)
+        for c in cols:
+            self.tree.heading(c, text=c)
+            self.tree.column(c, width=int(90 * sc), minwidth=int(70 * sc), anchor="center", stretch=True)
         self.tree.grid(row=0, column=0, sticky="nsew")
         sb = ttk.Scrollbar(tv_frame, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=sb.set); sb.grid(row=0, column=1, sticky="ns")
+        sb.grid(row=0, column=1, sticky="ns")
+        # Horizontal scrollbar keeps every column reachable when the window is narrow.
+        hsb = ttk.Scrollbar(tv_frame, orient="horizontal", command=self.tree.xview)
+        hsb.grid(row=1, column=0, sticky="ew")
+        self.tree.configure(yscrollcommand=sb.set, xscrollcommand=hsb.set)
 
         # Footer
         footer = ctk.CTkFrame(self, fg_color=self.col_panel, height=50)
@@ -896,7 +950,7 @@ class BlackHoleOptimizerApp(ctk.CTk):
             self.ax_cost.clear(); self._style_ax(self.ax_cost, "Best Cost vs Iteration", "Iteration", "Cost")
             self.ax_cost.plot(df["Iteration"], df["Cost"], '-o', color="#38bdf8", markersize=3)
             if len(df) > 1: self.ax_cost.set_xlim(1, max(df["Iteration"]))
-            self.fig_cost.tight_layout(pad=1.2); self.canvas_cost.draw_idle()
+            self.canvas_cost.draw_idle()
 
         if self.is_running:
             self._process_queue_job = self.after(50, self._process_queue)
@@ -912,7 +966,7 @@ class BlackHoleOptimizerApp(ctk.CTk):
         self.ax_sys.plot(t, y, color="#59ff45", linewidth=2, label="Response")
         self.ax_sys.axhline(ref, color="#ff4d5d", linestyle="--", label="Reference")
         self.ax_sys.legend(facecolor=self.col_panel, edgecolor=self.col_border, labelcolor="white")
-        self.fig_sys.tight_layout(pad=1.2); self.canvas_sys.draw_idle()
+        self.canvas_sys.draw_idle()
 
     def _finish_stop(self):
         self.is_running = False

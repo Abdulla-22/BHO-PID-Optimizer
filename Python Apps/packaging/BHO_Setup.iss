@@ -1,7 +1,7 @@
 ; Inno Setup script (paths are relative to this file). Build with: ISCC BHO_Setup.iss (after build_exe.bat)
 ; Optional: place vc_redist.x64.exe next to this file to bundle the VC++ runtime.
 #define AppName "BHO PID Optimizer"
-#define AppVersion "1.0.0"
+#define AppVersion "1.0.1"
 
 [Setup]
 AppId={{6F1B0C2E-4A7D-4E55-9B1A-3C8D2E7A5F10}

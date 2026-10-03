@@ -41,19 +41,8 @@ class ControllingDCMotorApp(ctk.CTk):
         super().__init__()
         self.title("Controlling DC Motor")
         
-        window_w = 1450
-        window_h = 750
-        screen_w = self.winfo_screenwidth()
-        screen_h = self.winfo_screenheight()
-        
-        if window_w > screen_w: window_w = screen_w - 50
-        if window_h > screen_h: window_h = screen_h - 50
-        
-        x = int((screen_w - window_w) / 2)
-        y = int((screen_h - window_h) / 2)
-        
-        self.geometry(f"{window_w}x{window_h}+-8+-2")
-        self.minsize(1200, 750)
+        # Fit the window to any resolution / Windows scaling (see _fit_window_to_screen).
+        self._fit_window_to_screen(pref_w=1450, pref_h=860, min_w=1150, min_h=640)
         
         # Deep space MATLAB-like colors
         self.col_bg = "#06111f"
@@ -154,7 +143,54 @@ class ControllingDCMotorApp(ctk.CTk):
         self.normal_geometry = self.geometry()
         self._geometry_restore_job = None
 
-        self.bind("<Configure>", self._remember_normal_geometry)
+        self.bind("<Configure>", self._remember_normal_geometry, add="+")
+
+    # ------------------------------------------------------------
+    # Window sizing (works for any resolution and Windows scaling)
+    # ------------------------------------------------------------
+    def _get_work_area_px(self):
+        """Return (x, y, w, h) of the usable desktop area in physical pixels (taskbar excluded on Windows)."""
+        try:
+            class _Rect(ctypes.Structure):
+                _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
+                            ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+            rect = _Rect()
+            # SPI_GETWORKAREA = 0x0030
+            if ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(rect), 0):
+                return rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top
+        except Exception:
+            pass
+        return 0, 0, self.winfo_screenwidth(), self.winfo_screenheight()
+
+    def _fit_window_to_screen(self, pref_w, pref_h, min_w, min_h):
+        """
+        Size and center the window so it always fits the usable screen area.
+
+        CustomTkinter scales geometry() and minsize() by the Windows display scaling
+        (e.g. 1200 x 720 becomes 1800 x 1080 physical pixels at 150 %), while the
+        screen size is reported in physical pixels. All limits are therefore
+        converted to CTk logical units before they are applied.
+        """
+        try:
+            scale = ctk.ScalingTracker.get_window_scaling(self)
+        except Exception:
+            scale = 1.0
+        area_x, area_y, area_w, area_h = self._get_work_area_px()
+
+        # Reserve space for the window frame and title bar (physical pixels).
+        frame_w = int(round(16 * scale))
+        frame_h = int(round(40 * scale))
+        avail_w = max(400, int((area_w - frame_w) / scale))
+        avail_h = max(300, int((area_h - frame_h) / scale))
+
+        width = min(pref_w, avail_w)
+        height = min(pref_h, avail_h)
+        self.minsize(min(min_w, width), min(min_h, height))
+
+        # Position offsets are not scaled by CTk, so they stay in physical pixels.
+        x = area_x + max(0, (area_w - int(round(width * scale)) - frame_w) // 2)
+        y = area_y + max(0, (area_h - int(round(height * scale)) - frame_h) // 2)
+        self.geometry(f"{width}x{height}+{x}+{y}")
 
     def toggle_fullscreen(self, event=None):
         if self.is_fullscreen:
@@ -302,23 +338,26 @@ class ControllingDCMotorApp(ctk.CTk):
         self.cb_boards.grid(row=0, column=3, sticky="w", padx=10, pady=5)
 
         # 2. Connection Panel
-        conn_sec = self._create_section(self.tab_conn, "Connection Panel", 1, 0, sticky="nwe")
+        conn_sec = self._create_section(self.tab_conn, "Connection Panel", 1, 0, sticky="nsew")
+        conn_sec.columnconfigure(0, weight=1); conn_sec.columnconfigure(1, weight=1)
         self.btn_connect = ctk.CTkButton(conn_sec, text="Connect", fg_color="#166534", hover_color="#22c55e", font=("Segoe UI", 12, "bold"), command=self.connect_arduino)
-        self.btn_connect.pack(side="left", padx=5)
+        self.btn_connect.grid(row=0, column=0, sticky="ew", padx=5)
         self.btn_disconnect = ctk.CTkButton(conn_sec, text="Disconnect", fg_color="#7f1d1d", hover_color="#ef4444", font=("Segoe UI", 12, "bold"), state="disabled", command=self.disconnect_arduino)
-        self.btn_disconnect.pack(side="left", padx=5)
+        self.btn_disconnect.grid(row=0, column=1, sticky="ew", padx=5)
 
         # 3. Testing Panel
-        test_sec = self._create_section(self.tab_conn, "Testing Panel", 1, 1, sticky="nwe")
+        test_sec = self._create_section(self.tab_conn, "Testing Panel", 1, 1, sticky="nsew")
+        test_sec.columnconfigure(0, weight=1); test_sec.columnconfigure(1, weight=1)
         self.btn_test = ctk.CTkButton(test_sec, text="Test (Blink D13)", fg_color="#075985", hover_color="#0284c7", state="disabled", command=self.test_connection)
-        self.btn_test.pack(side="left", padx=5)
+        self.btn_test.grid(row=0, column=0, sticky="ew", padx=5)
         self.btn_refresh = ctk.CTkButton(test_sec, text="Refresh Ports", fg_color="#1f2937", hover_color="#334155", command=self.refresh_ports)
-        self.btn_refresh.pack(side="left", padx=5)
+        self.btn_refresh.grid(row=0, column=1, sticky="ew", padx=5)
         
         # 4. Status Panel
-        stat_sec = self._create_section(self.tab_conn, "Status", 2, 0, colspan=2, sticky="swe")
+        stat_sec = self._create_section(self.tab_conn, "Status", 2, 0, colspan=2, sticky="nsew")
+        stat_sec.columnconfigure(0, weight=1)
         self.lbl_conn_status = ctk.CTkLabel(stat_sec, text="Status: Not connected", text_color="#ff4d5d", font=("Segoe UI", 14, "bold"))
-        self.lbl_conn_status.pack(side="left", pady=10)
+        self.lbl_conn_status.pack(side="left", pady=10, padx=10)
 
     def _build_opt_tab(self):
         self.tab_opt.columnconfigure(0, weight=1)
@@ -362,12 +401,20 @@ class ControllingDCMotorApp(ctk.CTk):
 
         # Table
         cols = ["Iteration", "Kp", "Ki", "Kd", "Cost"]
-        self.opt_tree = ttk.Treeview(res_sec, columns=cols, show="headings")
-        for c in cols: self.opt_tree.heading(c, text=c); self.opt_tree.column(c, width=80, anchor="center")
-        self.opt_tree.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        tree_frame = ctk.CTkFrame(res_sec, fg_color="transparent")
+        tree_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        tree_frame.columnconfigure(0, weight=1); tree_frame.rowconfigure(0, weight=1)
+        self.opt_tree = ttk.Treeview(tree_frame, columns=cols, show="headings", height=8)
+        for c in cols:
+            self.opt_tree.heading(c, text=c)
+            self.opt_tree.column(c, width=80, minwidth=60, anchor="center", stretch=True)
+        self.opt_tree.grid(row=0, column=0, sticky="nsew")
+        opt_sb = ttk.Scrollbar(tree_frame, orient="vertical", command=self.opt_tree.yview)
+        opt_sb.grid(row=0, column=1, sticky="ns")
+        self.opt_tree.configure(yscrollcommand=opt_sb.set)
 
         # Plot
-        self.fig_opt = Figure(figsize=(5, 3), dpi=100, facecolor=self.col_panel)
+        self.fig_opt = Figure(figsize=(5, 3), dpi=100, layout="constrained", facecolor=self.col_panel)
         self.ax_opt = self.fig_opt.add_subplot(111)
         self.canvas_opt = FigureCanvasTkAgg(self.fig_opt, master=res_sec)
         self.canvas_opt.get_tk_widget().grid(row=0, column=1, sticky="nsew")
@@ -394,7 +441,7 @@ class ControllingDCMotorApp(ctk.CTk):
         self.btn_save = ctk.CTkButton(lbl_frame, text="Save Data", fg_color="#075985", hover_color="#0284c7", state="normal", command=self.save_data)
         self.btn_save.pack(pady=30, anchor="w")
 
-        self.fig_ctrl = Figure(figsize=(6, 4), dpi=100, facecolor=self.col_panel)
+        self.fig_ctrl = Figure(figsize=(6, 4), dpi=100, layout="constrained", facecolor=self.col_panel)
         self.ax_ctrl = self.fig_ctrl.add_subplot(111)
         self.canvas_ctrl = FigureCanvasTkAgg(self.fig_ctrl, master=mon_sec)
         self.canvas_ctrl.get_tk_widget().grid(row=0, column=1, sticky="nsew")
@@ -439,6 +486,7 @@ class ControllingDCMotorApp(ctk.CTk):
         ax.tick_params(colors="#8bb6d6", labelsize=8)
         for spine in ax.spines.values(): spine.set_color(self.col_border)
         ax.grid(True, color=self.col_border, linestyle="--", alpha=0.5)
+
 
     def set_status(self, text, color="#59ff45"):
         self.lbl_conn_status.configure(text=f"Status: {text}", text_color=color)
